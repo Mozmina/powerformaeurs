@@ -30,6 +30,13 @@ const customStyles = `
 
   /* MathJax Display fix */
   mjx-container { outline: none !important; }
+
+  /* Content Editable Placeholder */
+  [contenteditable]:empty:before {
+    content: attr(placeholder);
+    color: #94a3b8;
+    cursor: text;
+  }
 `;
 
 // --- CONFIGURATION FIREBASE ---
@@ -74,8 +81,6 @@ interface BlockStyle {
   fontFamily?: FontFamily;
   fontSize?: FontSize;
   textAlign?: TextAlign;
-  isBold?: boolean;
-  isItalic?: boolean;
 }
 
 interface Block {
@@ -162,6 +167,43 @@ const getAlignClass = (align?: TextAlign) => {
   }
 };
 
+// --- COMPOSANT DE TEXTE RICHE (ContentEditable) ---
+const EditableText = ({ 
+  html, 
+  tagName, 
+  className, 
+  onChange, 
+  placeholder 
+}: { 
+  html: string, 
+  tagName: string, 
+  className: string, 
+  onChange: (val: string) => void,
+  placeholder?: string
+}) => {
+  const contentEditableRef = useRef<HTMLElement>(null);
+
+  const handleInput = (e: React.FormEvent<HTMLElement>) => {
+    onChange(e.currentTarget.innerHTML);
+  };
+
+  // Empêcher le focus de sauter à la fin lors de la frappe est complexe avec React pur + ContentEditable.
+  // Une approche simple pour l'instant : ne pas mettre à jour le HTML interne si le focus est dedans, 
+  // sauf si la prop html change radicalement (changement de bloc).
+  // Ici on simplifie : on laisse le navigateur gérer le DOM interne tant qu'on tape.
+
+  return React.createElement(tagName, {
+    className: className,
+    contentEditable: true,
+    suppressContentEditableWarning: true,
+    onInput: handleInput,
+    onBlur: handleInput, // Sauvegarde finale
+    dangerouslySetInnerHTML: { __html: html },
+    placeholder: placeholder,
+    ref: contentEditableRef
+  });
+};
+
 // --- COMPOSANT PRINCIPAL ---
 export default function App() {
   const [view, setView] = useState<'folders' | 'pages' | 'viewer' | 'editor'>('folders');
@@ -206,7 +248,6 @@ export default function App() {
     return () => unsub();
   }, [currentFolder]);
 
-  // MathJax Refresh automatique
   useEffect(() => {
     if ((window as any).MathJax) {
       setTimeout(() => {
@@ -393,22 +434,18 @@ function BlockRenderer({ block }: { block: Block }) {
   const fontClass = getFontClass(block.style?.fontFamily);
   const sizeClass = getSizeClass(block.style?.fontSize);
   const alignClass = getAlignClass(block.style?.textAlign);
-  const textStyles = `
-    ${block.style?.isBold ? 'font-bold' : ''} 
-    ${block.style?.isItalic ? 'italic' : ''}
-  `;
   
   // Si une couleur est définie, on force une bordure visible sinon bordure par défaut
   const borderClass = block.style?.backgroundColor && block.style.backgroundColor !== 'white' ? 'border-transparent' : 'border-slate-100';
   
-  const containerClasses = `h-full rounded-2xl p-6 border ${bgClass} ${borderClass} ${shadowClass} ${fontClass} ${sizeClass} ${alignClass} ${textStyles} transition-all duration-300 overflow-hidden`;
+  const containerClasses = `h-full rounded-2xl p-6 border ${bgClass} ${borderClass} ${shadowClass} ${fontClass} ${sizeClass} ${alignClass} transition-all duration-300 overflow-hidden`;
 
   const renderContent = () => {
     switch (block.type) {
       case 'h2':
         return <h2 className={`text-2xl font-bold text-slate-800 pb-2 border-b border-slate-200/50 flex items-center gap-3 ${alignClass === 'text-center' ? 'justify-center' : alignClass === 'text-right' ? 'justify-end' : ''}`}><span className="w-2 h-8 bg-violet-500 rounded-full"></span>{block.content}</h2>;
       case 'text':
-        return <div className="leading-relaxed whitespace-pre-wrap">{block.content || ''}</div>;
+        return <div className="leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: block.content || '' }} />;
       case 'equation':
         return (
           <div className="flex flex-col items-center justify-center p-4 bg-slate-50/50 rounded-lg">
@@ -426,7 +463,7 @@ function BlockRenderer({ block }: { block: Block }) {
         return (
           <div className={`p-4 rounded-xl border flex gap-4 text-left ${colors[block.subType || 'info']}`}>
             <AlertCircle className="shrink-0 mt-1 opacity-70" />
-            <div className="font-medium">{block.content || ''}</div>
+            <div className="font-medium" dangerouslySetInnerHTML={{ __html: block.content || '' }} />
           </div>
         );
       case 'flipcard':
@@ -452,7 +489,7 @@ function BlockRenderer({ block }: { block: Block }) {
             </button>
             <div className={`grid accordion-content ${open ? 'accordion-open' : 'accordion-closed'}`}>
                <div className="accordion-inner p-4 border-t border-slate-100 text-slate-600 leading-relaxed bg-slate-50/50">
-                 <div>{block.content || ''}</div>
+                 <div dangerouslySetInnerHTML={{ __html: block.content || '' }} />
                </div>
             </div>
           </div>
@@ -562,9 +599,7 @@ function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, 
         shadow: 'none', 
         fontFamily: 'sans', 
         fontSize: 'base',
-        textAlign: 'left',
-        isBold: false,
-        isItalic: false
+        textAlign: 'left'
       }
     };
     if (type === 'callout') newBlock.subType = 'info';
@@ -582,6 +617,11 @@ function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, 
 
   const removeBlock = (id: string) => {
     setBlocks(blocks.filter((b: Block) => b.id !== id));
+  };
+
+  // --- ACTIONS FORMATTAGE ---
+  const applyFormat = (command: string, value?: string) => {
+    document.execCommand(command, false, value);
   };
 
   // --- ACTIONS SPECIFIQUES ---
@@ -672,16 +712,19 @@ function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, 
               {blocks.map((block: Block) => (
                 <div key={block.id} className={`${getWidthClass(block.width)} px-3 mb-6 relative group transition-all duration-300`}>
                   
-                  {/* BARRE D'OUTILS FLOTTANTE (CORRIGÉE & ENRICHIE) */}
+                  {/* BARRE D'OUTILS FLOTTANTE */}
                   <div className="absolute top-2 right-5 z-20 flex items-center gap-1 bg-white shadow-xl border border-slate-200 rounded-xl p-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex-wrap max-w-[320px] justify-end">
                     
-                    {/* Style Typo */}
-                    <div className="flex gap-0.5">
-                      <button onClick={() => updateBlockStyle(block.id, { isBold: !block.style?.isBold })} className={`p-1.5 rounded hover:bg-slate-100 ${block.style?.isBold ? 'text-violet-600 bg-violet-50' : 'text-slate-500'}`}><Bold size={14}/></button>
-                      <button onClick={() => updateBlockStyle(block.id, { isItalic: !block.style?.isItalic })} className={`p-1.5 rounded hover:bg-slate-100 ${block.style?.isItalic ? 'text-violet-600 bg-violet-50' : 'text-slate-500'}`}><Italic size={14}/></button>
-                    </div>
-                    
-                    <div className="w-px h-4 bg-slate-200 mx-1"></div>
+                    {/* Formatage Texte (Bold/Italic) */}
+                    {(block.type === 'text' || block.type === 'callout') && (
+                      <>
+                        <div className="flex gap-0.5">
+                          <button onClick={() => applyFormat('bold')} className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-violet-600" title="Gras (Ctrl+B)"><Bold size={14}/></button>
+                          <button onClick={() => applyFormat('italic')} className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-violet-600" title="Italique (Ctrl+I)"><Italic size={14}/></button>
+                        </div>
+                        <div className="w-px h-4 bg-slate-200 mx-1"></div>
+                      </>
+                    )}
 
                     {/* Alignement */}
                     <div className="flex gap-0.5">
@@ -725,19 +768,19 @@ function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, 
                   </div>
 
                   {/* CONTENU ÉDITABLE */}
-                  <div className={`p-4 rounded-xl border-2 group-hover:border-violet-300 transition-all ${getBgClass(block.style?.backgroundColor)} ${getShadowClass(block.style?.shadow)} ${getFontClass(block.style?.fontFamily)} ${getSizeClass(block.style?.fontSize)} ${getAlignClass(block.style?.textAlign)} ${block.style?.isBold ? 'font-bold' : ''} ${block.style?.isItalic ? 'italic' : ''}`}>
+                  <div className={`p-4 rounded-xl border-2 group-hover:border-violet-300 transition-all ${getBgClass(block.style?.backgroundColor)} ${getShadowClass(block.style?.shadow)} ${getFontClass(block.style?.fontFamily)} ${getSizeClass(block.style?.fontSize)} ${getAlignClass(block.style?.textAlign)}`}>
                     
                     {block.type === 'h2' && (
                       <input className={`w-full font-bold bg-transparent border-none focus:ring-0 placeholder-slate-300 ${getAlignClass(block.style?.textAlign)}`} placeholder="Titre..." value={block.content || ''} onChange={e => updateBlock(block.id, { content: e.target.value })} />
                     )}
 
                     {block.type === 'text' && (
-                       <textarea 
-                          className={`w-full text-slate-700 resize-none bg-transparent border-none focus:ring-0 placeholder-slate-300 min-h-[5rem] ${getAlignClass(block.style?.textAlign)}`} 
-                          placeholder="Écrivez votre texte ici..." 
-                          rows={3} 
-                          value={block.content || ''} 
-                          onChange={e => updateBlock(block.id, { content: e.target.value })} 
+                       <EditableText 
+                          html={block.content || ''}
+                          tagName="div"
+                          className="min-h-[5rem] outline-none"
+                          placeholder="Écrivez votre texte ici..."
+                          onChange={(val) => updateBlock(block.id, { content: val })}
                        />
                     )}
 
@@ -786,7 +829,13 @@ function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, 
                     {block.type === 'accordion' && (
                       <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
                         <input className="w-full p-3 font-bold border-b border-slate-100" placeholder="Titre Accordéon" value={block.title || ''} onChange={e => updateBlock(block.id, { title: e.target.value })} />
-                        <textarea className="w-full p-3 text-slate-600 min-h-[4rem]" placeholder="Contenu caché..." value={block.content || ''} onChange={e => updateBlock(block.id, { content: e.target.value })} />
+                        <EditableText 
+                          html={block.content || ''}
+                          tagName="div"
+                          className="p-3 min-h-[4rem] outline-none text-slate-600"
+                          placeholder="Contenu caché..."
+                          onChange={(val) => updateBlock(block.id, { content: val })}
+                       />
                       </div>
                     )}
 
@@ -818,7 +867,13 @@ function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, 
                           <AlertCircle className="text-slate-400 shrink-0"/>
                           <div className="flex-1 grid gap-2">
                              <select className="text-xs font-bold uppercase text-slate-400" value={block.subType} onChange={e => updateBlock(block.id, { subType: e.target.value as any })}><option value="info">Info</option><option value="warn">Attention</option><option value="idea">Idée</option></select>
-                             <input className="w-full" placeholder="Votre note..." value={block.content || ''} onChange={e => updateBlock(block.id, { content: e.target.value })} />
+                             <EditableText 
+                                html={block.content || ''}
+                                tagName="div"
+                                className="outline-none"
+                                placeholder="Votre note..."
+                                onChange={(val) => updateBlock(block.id, { content: val })}
+                             />
                           </div>
                        </div>
                     )}
