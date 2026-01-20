@@ -208,7 +208,8 @@ const EditableText = ({
     onBlur: handleInput, // Sauvegarde finale
     dangerouslySetInnerHTML: { __html: html },
     placeholder: placeholder,
-    ref: contentEditableRef
+    ref: contentEditableRef,
+    dir: "auto" // Assure la détection automatique de la direction
   });
 };
 
@@ -608,7 +609,7 @@ function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, 
         shadow: 'none', 
         fontFamily: 'sans', 
         fontSize: 'base',
-        textAlign: 'left'
+        textAlign: 'left' // Correction de l'alignement par défaut
       }
     };
     if (type === 'callout') newBlock.subType = 'info';
