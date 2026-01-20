@@ -12,7 +12,7 @@ import {
   Settings, Save, X, Image as ImageIcon, Type, 
   List, AlertCircle, ChevronDown, RotateCw, UploadCloud, Loader2, Calendar,
   Layout, Palette, Box, Maximize, Minimize, FileCode, File, 
-  Bold, Italic, Heading, Calculator, Sigma
+  Bold, Italic, Heading, Calculator, Sigma, AlignLeft, AlignCenter, AlignRight
 } from 'lucide-react';
 
 // --- STYLES CSS ---
@@ -56,9 +56,10 @@ const storage = getStorage(app);
 type BlockType = 'h2' | 'text' | 'image' | 'callout' | 'flipcard' | 'accordion' | 'timeline' | 'embed' | 'pdf' | 'equation';
 type BlockWidth = '100%' | '50%' | '33%';
 type BlockShadow = 'none' | 'sm' | 'md' | 'xl';
-type BlockColor = 'white' | 'slate' | 'blue' | 'violet' | 'amber' | 'emerald';
+type BlockColor = 'white' | 'slate' | 'blue' | 'violet' | 'amber' | 'emerald' | 'rose';
 type FontFamily = 'sans' | 'serif' | 'mono';
-type FontSize = 'sm' | 'base' | 'lg' | 'xl';
+type FontSize = 'sm' | 'base' | 'lg' | 'xl' | '2xl';
+type TextAlign = 'left' | 'center' | 'right';
 
 interface TimelineItem {
   id: string;
@@ -72,6 +73,9 @@ interface BlockStyle {
   shadow?: BlockShadow;
   fontFamily?: FontFamily;
   fontSize?: FontSize;
+  textAlign?: TextAlign;
+  isBold?: boolean;
+  isItalic?: boolean;
 }
 
 interface Block {
@@ -127,6 +131,7 @@ const getBgClass = (color?: BlockColor) => {
     case 'violet': return 'bg-violet-50 border-violet-200';
     case 'amber': return 'bg-amber-50 border-amber-200';
     case 'emerald': return 'bg-emerald-50 border-emerald-200';
+    case 'rose': return 'bg-rose-50 border-rose-200';
     default: return 'bg-white border-transparent';
   }
 };
@@ -144,7 +149,16 @@ const getSizeClass = (size?: FontSize) => {
     case 'sm': return 'text-sm';
     case 'lg': return 'text-lg';
     case 'xl': return 'text-xl';
+    case '2xl': return 'text-2xl';
     default: return 'text-base';
+  }
+};
+
+const getAlignClass = (align?: TextAlign) => {
+  switch(align) {
+    case 'center': return 'text-center';
+    case 'right': return 'text-right';
+    default: return 'text-left';
   }
 };
 
@@ -195,7 +209,6 @@ export default function App() {
   // MathJax Refresh automatique
   useEffect(() => {
     if ((window as any).MathJax) {
-      // On attend un peu que le DOM soit rendu
       setTimeout(() => {
         try {
           (window as any).MathJax.typesetPromise?.();
@@ -379,21 +392,26 @@ function BlockRenderer({ block }: { block: Block }) {
   const shadowClass = getShadowClass(block.style?.shadow);
   const fontClass = getFontClass(block.style?.fontFamily);
   const sizeClass = getSizeClass(block.style?.fontSize);
-  const borderClass = block.style?.backgroundColor && block.style.backgroundColor !== 'white' ? 'border' : 'border border-slate-100';
+  const alignClass = getAlignClass(block.style?.textAlign);
+  const textStyles = `
+    ${block.style?.isBold ? 'font-bold' : ''} 
+    ${block.style?.isItalic ? 'italic' : ''}
+  `;
   
-  const containerClasses = `h-full rounded-2xl p-6 ${bgClass} ${borderClass} ${shadowClass} ${fontClass} ${sizeClass} transition-shadow duration-300 overflow-hidden`;
+  // Si une couleur est définie, on force une bordure visible sinon bordure par défaut
+  const borderClass = block.style?.backgroundColor && block.style.backgroundColor !== 'white' ? 'border-transparent' : 'border-slate-100';
+  
+  const containerClasses = `h-full rounded-2xl p-6 border ${bgClass} ${borderClass} ${shadowClass} ${fontClass} ${sizeClass} ${alignClass} ${textStyles} transition-all duration-300 overflow-hidden`;
 
   const renderContent = () => {
     switch (block.type) {
       case 'h2':
-        return <h2 className="text-2xl font-bold text-slate-800 pb-2 border-b border-slate-200/50 flex items-center gap-3"><span className="w-2 h-8 bg-violet-500 rounded-full"></span>{block.content}</h2>;
+        return <h2 className={`text-2xl font-bold text-slate-800 pb-2 border-b border-slate-200/50 flex items-center gap-3 ${alignClass === 'text-center' ? 'justify-center' : alignClass === 'text-right' ? 'justify-end' : ''}`}><span className="w-2 h-8 bg-violet-500 rounded-full"></span>{block.content}</h2>;
       case 'text':
-        // Rendu HTML sécurisé pour le texte enrichi
-        return <div className="leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: block.content || '' }} />;
+        return <div className="leading-relaxed whitespace-pre-wrap">{block.content || ''}</div>;
       case 'equation':
         return (
           <div className="flex flex-col items-center justify-center p-4 bg-slate-50/50 rounded-lg">
-             {/* Utilisation de délimiteurs pour MathJax */}
              <div className="text-lg">
                {`$$ ${block.content || ''} $$`}
              </div>
@@ -406,9 +424,9 @@ function BlockRenderer({ block }: { block: Block }) {
           idea: 'bg-emerald-50/50 border-emerald-200 text-emerald-900'
         };
         return (
-          <div className={`p-4 rounded-xl border flex gap-4 ${colors[block.subType || 'info']}`}>
+          <div className={`p-4 rounded-xl border flex gap-4 text-left ${colors[block.subType || 'info']}`}>
             <AlertCircle className="shrink-0 mt-1 opacity-70" />
-            <div className="font-medium" dangerouslySetInnerHTML={{ __html: block.content || '' }} />
+            <div className="font-medium">{block.content || ''}</div>
           </div>
         );
       case 'flipcard':
@@ -427,21 +445,21 @@ function BlockRenderer({ block }: { block: Block }) {
         );
       case 'accordion':
         return (
-          <div className="border border-slate-200 rounded-xl overflow-hidden bg-white/60 shadow-sm hover:shadow-md transition-shadow">
+          <div className="border border-slate-200 rounded-xl overflow-hidden bg-white/60 shadow-sm hover:shadow-md transition-shadow text-left">
             <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 transition-colors text-left font-semibold text-slate-800">
               {block.title}
               <ChevronDown className={`transform transition-transform duration-300 text-slate-400 ${open ? 'rotate-180' : ''}`} />
             </button>
             <div className={`grid accordion-content ${open ? 'accordion-open' : 'accordion-closed'}`}>
                <div className="accordion-inner p-4 border-t border-slate-100 text-slate-600 leading-relaxed bg-slate-50/50">
-                 <div dangerouslySetInnerHTML={{ __html: block.content || '' }} />
+                 <div>{block.content || ''}</div>
                </div>
             </div>
           </div>
         );
       case 'timeline':
         return (
-          <div className="space-y-6 relative py-2">
+          <div className="space-y-6 relative py-2 text-left">
              <div className="absolute left-[7px] top-4 bottom-4 w-0.5 bg-slate-200"></div>
              {(block.items || []).map((item) => (
                <div key={item.id} className="relative pl-8 group">
@@ -497,25 +515,9 @@ function BlockRenderer({ block }: { block: Block }) {
     }
   };
 
-  if (block.type === 'h2' && (!block.style?.backgroundColor || block.style.backgroundColor === 'white')) {
-    return <div className="py-4">{renderContent()}</div>;
-  }
-
   return (
     <div className={containerClasses}>
       {renderContent()}
-    </div>
-  );
-}
-
-// --- ÉDITEUR DE TEXTE ENRICHI (TOOLBAR) ---
-function RichTextToolbar({ onAction }: { onAction: (tag: string, endTag?: string) => void }) {
-  return (
-    <div className="flex items-center gap-1 p-1 bg-slate-100 border border-slate-200 rounded-lg mb-2 w-fit">
-      <button onClick={() => onAction('<b>', '</b>')} className="p-1.5 hover:bg-white rounded text-slate-600 hover:text-slate-900" title="Gras"><Bold size={14}/></button>
-      <button onClick={() => onAction('<i>', '</i>')} className="p-1.5 hover:bg-white rounded text-slate-600 hover:text-slate-900" title="Italique"><Italic size={14}/></button>
-      <div className="w-px h-4 bg-slate-300 mx-1"></div>
-      <button onClick={() => onAction('<h3>', '</h3>')} className="p-1.5 hover:bg-white rounded text-slate-600 hover:text-slate-900" title="Sous-titre"><Heading size={14}/></button>
     </div>
   );
 }
@@ -548,8 +550,6 @@ function MathKeyboard({ onInsert }: { onInsert: (symbol: string) => void }) {
 
 function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, onSave, storage }: any) {
   const [uploading, setUploading] = useState(false);
-  // Refs pour gérer la position du curseur
-  const textRefs = useRef<{[key: string]: HTMLTextAreaElement | null}>({});
 
   // --- ACTIONS BLOCS ---
   const addBlock = (type: BlockType) => {
@@ -557,7 +557,15 @@ function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, 
       id: Date.now().toString(), 
       type, 
       width: '100%', 
-      style: { backgroundColor: 'white', shadow: 'none', fontFamily: 'sans', fontSize: 'base' }
+      style: { 
+        backgroundColor: 'white', 
+        shadow: 'none', 
+        fontFamily: 'sans', 
+        fontSize: 'base',
+        textAlign: 'left',
+        isBold: false,
+        isItalic: false
+      }
     };
     if (type === 'callout') newBlock.subType = 'info';
     if (type === 'timeline') newBlock.items = [];
@@ -574,28 +582,6 @@ function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, 
 
   const removeBlock = (id: string) => {
     setBlocks(blocks.filter((b: Block) => b.id !== id));
-  };
-
-  // --- HELPER TEXTE ENRICHI ---
-  const insertTag = (blockId: string, startTag: string, endTag: string = '') => {
-    const textarea = textRefs.current[blockId];
-    if (!textarea) return;
-
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const text = textarea.value;
-    const before = text.substring(0, start);
-    const selection = text.substring(start, end);
-    const after = text.substring(end);
-
-    const newContent = before + startTag + selection + endTag + after;
-    updateBlock(blockId, { content: newContent });
-    
-    // On remet le focus après update
-    setTimeout(() => {
-        textarea.focus();
-        textarea.setSelectionRange(start + startTag.length, end + startTag.length);
-    }, 0);
   };
 
   // --- ACTIONS SPECIFIQUES ---
@@ -646,7 +632,7 @@ function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, 
         <div className="p-4 space-y-6">
           <ToolSection title="Structure & Texte">
             <ToolButton icon={Type} label="Titre de Section" onClick={() => addBlock('h2')} />
-            <ToolButton icon={FileText} label="Texte Enrichi" onClick={() => addBlock('text')} />
+            <ToolButton icon={FileText} label="Texte Simple" onClick={() => addBlock('text')} />
             <ToolButton icon={Sigma} label="Équation Math" onClick={() => addBlock('equation')} />
           </ToolSection>
           <ToolSection title="Interactif">
@@ -686,44 +672,48 @@ function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, 
               {blocks.map((block: Block) => (
                 <div key={block.id} className={`${getWidthClass(block.width)} px-3 mb-6 relative group transition-all duration-300`}>
                   
-                  {/* BARRE D'OUTILS FLOTTANTE */}
-                  <div className="absolute top-2 right-5 z-20 flex items-center gap-1 bg-white shadow-lg border border-slate-100 rounded-lg p-1 opacity-0 group-hover:opacity-100 transition-opacity flex-wrap max-w-[250px] justify-end">
+                  {/* BARRE D'OUTILS FLOTTANTE (CORRIGÉE & ENRICHIE) */}
+                  <div className="absolute top-2 right-5 z-20 flex items-center gap-1 bg-white shadow-xl border border-slate-200 rounded-xl p-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex-wrap max-w-[320px] justify-end">
                     
-                    {/* Style de Texte (Police, Taille) */}
-                    <select 
-                      className="text-xs p-1 bg-slate-50 rounded border-none focus:ring-0" 
-                      value={block.style?.fontFamily || 'sans'} 
-                      onChange={(e) => updateBlockStyle(block.id, { fontFamily: e.target.value as FontFamily })}
-                    >
-                      <option value="sans">Sans</option>
-                      <option value="serif">Serif</option>
-                      <option value="mono">Mono</option>
-                    </select>
+                    {/* Style Typo */}
+                    <div className="flex gap-0.5">
+                      <button onClick={() => updateBlockStyle(block.id, { isBold: !block.style?.isBold })} className={`p-1.5 rounded hover:bg-slate-100 ${block.style?.isBold ? 'text-violet-600 bg-violet-50' : 'text-slate-500'}`}><Bold size={14}/></button>
+                      <button onClick={() => updateBlockStyle(block.id, { isItalic: !block.style?.isItalic })} className={`p-1.5 rounded hover:bg-slate-100 ${block.style?.isItalic ? 'text-violet-600 bg-violet-50' : 'text-slate-500'}`}><Italic size={14}/></button>
+                    </div>
+                    
+                    <div className="w-px h-4 bg-slate-200 mx-1"></div>
 
-                     <select 
-                      className="text-xs p-1 bg-slate-50 rounded border-none focus:ring-0" 
-                      value={block.style?.fontSize || 'base'} 
-                      onChange={(e) => updateBlockStyle(block.id, { fontSize: e.target.value as FontSize })}
-                    >
-                      <option value="sm">Petit</option>
-                      <option value="base">Normal</option>
-                      <option value="lg">Grand</option>
-                      <option value="xl">Titre</option>
-                    </select>
+                    {/* Alignement */}
+                    <div className="flex gap-0.5">
+                      <button onClick={() => updateBlockStyle(block.id, { textAlign: 'left' })} className={`p-1.5 rounded hover:bg-slate-100 ${(!block.style?.textAlign || block.style.textAlign === 'left') ? 'text-violet-600 bg-violet-50' : 'text-slate-500'}`}><AlignLeft size={14}/></button>
+                      <button onClick={() => updateBlockStyle(block.id, { textAlign: 'center' })} className={`p-1.5 rounded hover:bg-slate-100 ${block.style?.textAlign === 'center' ? 'text-violet-600 bg-violet-50' : 'text-slate-500'}`}><AlignCenter size={14}/></button>
+                      <button onClick={() => updateBlockStyle(block.id, { textAlign: 'right' })} className={`p-1.5 rounded hover:bg-slate-100 ${block.style?.textAlign === 'right' ? 'text-violet-600 bg-violet-50' : 'text-slate-500'}`}><AlignRight size={14}/></button>
+                    </div>
 
                     <div className="w-px h-4 bg-slate-200 mx-1"></div>
 
+                    {/* Police & Taille */}
+                    <select className="text-xs p-1 bg-slate-50 rounded border-none focus:ring-0 w-16" value={block.style?.fontFamily || 'sans'} onChange={(e) => updateBlockStyle(block.id, { fontFamily: e.target.value as FontFamily })}><option value="sans">Sans</option><option value="serif">Serif</option><option value="mono">Mono</option></select>
+                    <select className="text-xs p-1 bg-slate-50 rounded border-none focus:ring-0 w-16" value={block.style?.fontSize || 'base'} onChange={(e) => updateBlockStyle(block.id, { fontSize: e.target.value as FontSize })}><option value="sm">Petit</option><option value="base">Moyen</option><option value="lg">Grand</option><option value="xl">XL</option><option value="2xl">XXL</option></select>
+
+                    <div className="w-full h-px bg-slate-100 my-1"></div> {/* Séparateur ligne */}
+
                     {/* Layout */}
-                    <button onClick={() => updateBlock(block.id, { width: '100%' })} className={`p-1.5 rounded hover:bg-slate-100 ${block.width === '100%' ? 'text-violet-600 bg-violet-50' : 'text-slate-400'}`} title="Pleine largeur"><Maximize size={14}/></button>
-                    <button onClick={() => updateBlock(block.id, { width: '50%' })} className={`p-1.5 rounded hover:bg-slate-100 ${block.width === '50%' ? 'text-violet-600 bg-violet-50' : 'text-slate-400'}`} title="Moitié"><Layout size={14}/></button>
-                    <button onClick={() => updateBlock(block.id, { width: '33%' })} className={`p-1.5 rounded hover:bg-slate-100 ${block.width === '33%' ? 'text-violet-600 bg-violet-50' : 'text-slate-400'}`} title="Tiers"><Minimize size={14}/></button>
+                    <button onClick={() => updateBlock(block.id, { width: '100%' })} className={`p-1.5 rounded hover:bg-slate-100 ${block.width === '100%' ? 'text-violet-600 bg-violet-50' : 'text-slate-400'}`} title="100%"><Maximize size={14}/></button>
+                    <button onClick={() => updateBlock(block.id, { width: '50%' })} className={`p-1.5 rounded hover:bg-slate-100 ${block.width === '50%' ? 'text-violet-600 bg-violet-50' : 'text-slate-400'}`} title="50%"><Layout size={14}/></button>
+                    <button onClick={() => updateBlock(block.id, { width: '33%' })} className={`p-1.5 rounded hover:bg-slate-100 ${block.width === '33%' ? 'text-violet-600 bg-violet-50' : 'text-slate-400'}`} title="33%"><Minimize size={14}/></button>
                     
                     <div className="w-px h-4 bg-slate-200 mx-1"></div>
 
                     {/* Couleur */}
-                    <div className="flex gap-1 px-1">
-                       {['white', 'blue', 'violet', 'amber', 'emerald'].map((c) => (
-                         <button key={c} onClick={() => updateBlockStyle(block.id, { backgroundColor: c as BlockColor })} className={`w-3 h-3 rounded-full border border-slate-200 ${getBgClass(c as BlockColor)} hover:scale-125 transition-transform`}></button>
+                    <div className="flex gap-1 px-1 items-center">
+                       {['white', 'slate', 'blue', 'violet', 'amber', 'emerald', 'rose'].map((c) => (
+                         <button 
+                           key={c} 
+                           onClick={() => updateBlockStyle(block.id, { backgroundColor: c as BlockColor })} 
+                           className={`w-4 h-4 rounded-full border border-slate-300 ${getBgClass(c as BlockColor)} hover:scale-125 transition-transform shadow-sm ${block.style?.backgroundColor === c ? 'ring-2 ring-violet-400 ring-offset-1' : ''}`}
+                           title={c}
+                         ></button>
                        ))}
                     </div>
                     
@@ -735,25 +725,20 @@ function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, 
                   </div>
 
                   {/* CONTENU ÉDITABLE */}
-                  <div className={`p-4 rounded-xl border-2 border-transparent group-hover:border-violet-100 group-hover:bg-slate-50/50 transition-all ${getBgClass(block.style?.backgroundColor)} ${getShadowClass(block.style?.shadow)} ${getFontClass(block.style?.fontFamily)}`}>
+                  <div className={`p-4 rounded-xl border-2 group-hover:border-violet-300 transition-all ${getBgClass(block.style?.backgroundColor)} ${getShadowClass(block.style?.shadow)} ${getFontClass(block.style?.fontFamily)} ${getSizeClass(block.style?.fontSize)} ${getAlignClass(block.style?.textAlign)} ${block.style?.isBold ? 'font-bold' : ''} ${block.style?.isItalic ? 'italic' : ''}`}>
                     
                     {block.type === 'h2' && (
-                      <input className={`w-full font-bold bg-transparent border-none focus:ring-0 placeholder-slate-300 ${getSizeClass(block.style?.fontSize || 'xl')}`} placeholder="Titre..." value={block.content || ''} onChange={e => updateBlock(block.id, { content: e.target.value })} />
+                      <input className={`w-full font-bold bg-transparent border-none focus:ring-0 placeholder-slate-300 ${getAlignClass(block.style?.textAlign)}`} placeholder="Titre..." value={block.content || ''} onChange={e => updateBlock(block.id, { content: e.target.value })} />
                     )}
 
                     {block.type === 'text' && (
-                       <div>
-                         {/* Toolbar Riche Text */}
-                         <RichTextToolbar onAction={(tag, end) => insertTag(block.id, tag, end)} />
-                         <textarea 
-                            ref={el => textRefs.current[block.id] = el}
-                            className={`w-full text-slate-600 resize-none bg-transparent border-none focus:ring-0 placeholder-slate-300 min-h-[5rem] ${getSizeClass(block.style?.fontSize)}`} 
-                            placeholder="Texte (supporte HTML)..." 
-                            rows={3} 
-                            value={block.content || ''} 
-                            onChange={e => updateBlock(block.id, { content: e.target.value })} 
-                         />
-                       </div>
+                       <textarea 
+                          className={`w-full text-slate-700 resize-none bg-transparent border-none focus:ring-0 placeholder-slate-300 min-h-[5rem] ${getAlignClass(block.style?.textAlign)}`} 
+                          placeholder="Écrivez votre texte ici..." 
+                          rows={3} 
+                          value={block.content || ''} 
+                          onChange={e => updateBlock(block.id, { content: e.target.value })} 
+                       />
                     )}
 
                     {block.type === 'equation' && (
@@ -769,7 +754,7 @@ function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, 
                              onChange={e => updateBlock(block.id, { content: e.target.value })}
                            />
                          </div>
-                         <div className="text-xs text-slate-400">Prévisualisation : <span className="text-slate-800 font-serif">$$ {block.content || '...'} $$</span></div>
+                         <div className="text-xs text-slate-400 text-center py-2">Prévisualisation : <span className="text-slate-800 font-serif">$$ {block.content || '...'} $$</span></div>
                          
                          {/* Clavier Virtuel */}
                          <details className="mt-2">
