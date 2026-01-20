@@ -20,7 +20,10 @@ import {
 const customStyles = `
   .perspective-1000 { perspective: 1000px; }
   .transform-style-3d { transform-style: preserve-3d; }
-  .backface-hidden { backface-visibility: hidden; }
+  .backface-hidden { 
+    backface-visibility: hidden; 
+    -webkit-backface-visibility: hidden;
+  }
   .rotate-y-180 { transform: rotateY(180deg); }
   
   /* Animation Accordéon */
@@ -180,7 +183,7 @@ const getAlignClass = (align?: TextAlign) => {
   }
 };
 
-// --- COMPOSANT DE TEXTE RICHE (ContentEditable) ---
+// --- COMPOSANT DE TEXTE RICHE CORRIGÉ ---
 const EditableText = ({ 
   html, 
   tagName, 
@@ -195,9 +198,25 @@ const EditableText = ({
   placeholder?: string
 }) => {
   const contentEditableRef = useRef<HTMLElement>(null);
+  const lastHtml = useRef(html);
+
+  // Mise à jour manuelle pour éviter le re-render React qui reset le curseur
+  React.useLayoutEffect(() => {
+    if (contentEditableRef.current && contentEditableRef.current.innerHTML !== html) {
+      // On ne met à jour que si l'élément n'a pas le focus (modifié de l'extérieur)
+      if (document.activeElement !== contentEditableRef.current) {
+        contentEditableRef.current.innerHTML = html;
+      }
+    }
+    lastHtml.current = html;
+  }, [html]);
 
   const handleInput = (e: React.FormEvent<HTMLElement>) => {
-    onChange(e.currentTarget.innerHTML);
+    const newHtml = e.currentTarget.innerHTML;
+    if (newHtml !== lastHtml.current) {
+      onChange(newHtml);
+    }
+    lastHtml.current = newHtml;
   };
 
   return React.createElement(tagName, {
@@ -205,11 +224,10 @@ const EditableText = ({
     contentEditable: true,
     suppressContentEditableWarning: true,
     onInput: handleInput,
-    onBlur: handleInput, // Sauvegarde finale
-    dangerouslySetInnerHTML: { __html: html },
+    onBlur: handleInput,
     placeholder: placeholder,
-    ref: contentEditableRef,
-    dir: "auto" // Assure la détection automatique de la direction
+    ref: contentEditableRef
+    // Pas de dangerouslySetInnerHTML ici pour laisser le contrôle manuel
   });
 };
 
