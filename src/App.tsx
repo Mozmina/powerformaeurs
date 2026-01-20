@@ -22,7 +22,10 @@ const customStyles = `
 `;
 
 // --- CONFIGURATION FIREBASE ---
-// Utilisez import.meta.env.VITE_FIREBASE_API_KEY en local
+// NOTE IMPORTANTE :
+// En local sur votre machine, décommentez la ligne ci-dessous :
+// const apiKey = import.meta.env.VITE_FIREBASE_API_KEY || "";
+// Pour cette prévisualisation, nous utilisons une variable simple pour éviter l'erreur de compilation :
 const apiKey = ""; 
 
 const firebaseConfig = {
@@ -35,19 +38,10 @@ const firebaseConfig = {
   measurementId: "G-5Z7BVY12B9"
 };
 
-// Initialisation sécurisée
-let app, db, storage;
-try {
-  if (!firebaseConfig.apiKey) {
-    console.warn("⚠️ Clé API Firebase manquante. Le mode démo sera activé.");
-  }
-  app = initializeApp(firebaseConfig);
-  db = getFirestore(app);
-  storage = getStorage(app);
-} catch (error) {
-  console.error("Erreur init Firebase:", error);
-}
-
+// Initialisation directe
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const storage = getStorage(app);
 // --- TYPES ---
 type BlockType = 'h2' | 'text' | 'image' | 'callout' | 'flipcard' | 'accordion' | 'timeline';
 
@@ -110,17 +104,6 @@ export default function App() {
   
   // Charger les dossiers
   useEffect(() => {
-    if (!firebaseConfig.apiKey) {
-      setFolders([{ id: 'demo-folder', title: 'Dossier Démo (Mode Hors Ligne)' }]);
-      setLoading(false);
-      return;
-    }
-
-    if (!db) {
-      setLoading(false);
-      return;
-    }
-
     const q = query(collection(db, "folders"), orderBy("createdAt", "desc"));
     const unsub = onSnapshot(q, (snap) => {
       setFolders(snap.docs.map(d => ({ id: d.id, ...d.data() } as FolderData)));
@@ -132,52 +115,28 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // Charger les pages (CORRECTION ICI)
+  // Charger les pages (CORRIGÉ : Tri côté client pour éviter l'erreur d'index)
   useEffect(() => {
     if (!currentFolder) return;
 
-    // Mode Démo
-    if (!firebaseConfig.apiKey) {
-      setPages([{
-        id: 'demo-page',
-        folderId: 'demo-folder',
-        title: 'Exemple de Page Timeline',
-        createdAt: { seconds: Date.now() / 1000 },
-        blocks: [
-          { 
-            id: 'b1', 
-            type: 'timeline', 
-            items: [
-              { id: 't1', date: '2023', title: 'Lancement', description: 'Début du projet.' },
-              { id: 't2', date: '2024', title: 'Développement', description: 'Phase de codage intense.' }
-            ]
-          }
-        ]
-      } as PageData]);
-      return;
-    }
-
-    if (!db) return;
-
-    // CORRECTION : On a retiré orderBy("createdAt") ici pour éviter le besoin d'un index composite
+    // Requête simple sans 'orderBy' pour éviter l'erreur d'index composite
     const q = query(collection(db, "pages"), where("folderId", "==", currentFolder.id));
     
     const unsub = onSnapshot(q, (snap) => {
-      // On transforme les données
+      // Transformation des données
       const fetchedPages = snap.docs.map(d => ({ id: d.id, ...d.data() } as PageData));
       
-      // On fait le tri en JavaScript côté client (plus robuste sans index)
+      // Tri manuel en JavaScript (plus récent en premier)
       fetchedPages.sort((a, b) => {
         const timeA = a.createdAt?.seconds || 0;
         const timeB = b.createdAt?.seconds || 0;
-        return timeB - timeA; // Descendant (plus récent en premier)
+        return timeB - timeA;
       });
       
       setPages(fetchedPages);
     }, (error) => {
-      // Ajout d'un log d'erreur explicite
       console.error("Erreur lecture pages:", error);
-      alert("Erreur lors de la récupération des pages. Vérifiez la console (F12).");
+      alert("Erreur lors de la récupération des pages. Vérifiez la console.");
     });
     return () => unsub();
   }, [currentFolder]);
@@ -219,10 +178,6 @@ export default function App() {
   const handleCreateFolder = async () => {
     const name = prompt("Nom du dossier ?");
     if (name) {
-      if (!db || !firebaseConfig.apiKey) {
-        alert("Action impossible en mode démo (configurez la clé API).");
-        return;
-      }
       try {
         await addDoc(collection(db, 'folders'), { title: name, createdAt: serverTimestamp() });
       } catch (e: any) {
@@ -233,10 +188,6 @@ export default function App() {
 
   const handleDelete = async (id: string, col: string) => {
     if (confirm("Supprimer définitivement ?")) {
-      if (!db || !firebaseConfig.apiKey) {
-        alert("Action impossible en mode démo.");
-        return;
-      }
       try {
         await deleteDoc(doc(db, col, id));
       } catch (e: any) {
@@ -246,9 +197,6 @@ export default function App() {
   };
 
   const handleSavePage = async () => {
-    if (!firebaseConfig.apiKey) return alert("Mode Démo : La sauvegarde vers Firebase est désactivée sans clé API.");
-    if (!db) return alert("Erreur connexion base de données.");
-    
     if (!editorTitle) return alert("Veuillez ajouter un titre à la page !");
     if (!currentFolder) return alert("Aucun dossier sélectionné.");
 
@@ -263,7 +211,7 @@ export default function App() {
       setView('pages');
     } catch (e: any) {
       console.error("Erreur sauvegarde:", e);
-      alert(`Échec de la publication : ${e.message}\n\nVérifiez vos règles Firestore et votre connexion.`);
+      alert(`Échec de la publication : ${e.message}`);
     }
   };
 
@@ -316,17 +264,6 @@ export default function App() {
       {/* MAIN CONTENT */}
       <main className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-8 overflow-y-auto">
         
-        {/* BANNIÈRE MODE DÉMO */}
-        {!firebaseConfig.apiKey && (
-          <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-xl mb-6 flex items-center gap-3">
-             <AlertCircle className="text-amber-600" />
-             <div>
-               <p className="font-bold">Mode Démonstration</p>
-               <p className="text-sm">Aucune clé API Firebase détectée. L'application fonctionne en mode local simulé. La publication ne sera pas sauvegardée.</p>
-             </div>
-          </div>
-        )}
-
         {/* VUE: LISTE DES DOSSIERS */}
         {view === 'folders' && (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
