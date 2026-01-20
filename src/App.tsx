@@ -12,7 +12,8 @@ import {
   Settings, Save, X, Image as ImageIcon, Type, 
   List, AlertCircle, ChevronDown, RotateCw, UploadCloud, Loader2, Calendar,
   Layout, Palette, Box, Maximize, Minimize, FileCode, File, 
-  Bold, Italic, Heading, Calculator, Sigma, AlignLeft, AlignCenter, AlignRight
+  Bold, Italic, Heading, Calculator, Sigma, AlignLeft, AlignCenter, AlignRight,
+  GripVertical
 } from 'lucide-react';
 
 // --- STYLES CSS ---
@@ -36,6 +37,16 @@ const customStyles = `
     content: attr(placeholder);
     color: #94a3b8;
     cursor: text;
+  }
+
+  /* Drag & Drop Styles */
+  .drag-over {
+    border-top: 3px solid #7c3aed !important; /* Violet-600 */
+    transition: border 0.1s ease;
+  }
+  .dragging {
+    opacity: 0.5;
+    background-color: #f3f4f6;
   }
 `;
 
@@ -81,6 +92,8 @@ interface BlockStyle {
   fontFamily?: FontFamily;
   fontSize?: FontSize;
   textAlign?: TextAlign;
+  isBold?: boolean;
+  isItalic?: boolean;
 }
 
 interface Block {
@@ -186,11 +199,6 @@ const EditableText = ({
   const handleInput = (e: React.FormEvent<HTMLElement>) => {
     onChange(e.currentTarget.innerHTML);
   };
-
-  // Empêcher le focus de sauter à la fin lors de la frappe est complexe avec React pur + ContentEditable.
-  // Une approche simple pour l'instant : ne pas mettre à jour le HTML interne si le focus est dedans, 
-  // sauf si la prop html change radicalement (changement de bloc).
-  // Ici on simplifie : on laisse le navigateur gérer le DOM interne tant qu'on tape.
 
   return React.createElement(tagName, {
     className: className,
@@ -587,6 +595,7 @@ function MathKeyboard({ onInsert }: { onInsert: (symbol: string) => void }) {
 
 function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, onSave, storage }: any) {
   const [uploading, setUploading] = useState(false);
+  const [draggedBlockIndex, setDraggedBlockIndex] = useState<number | null>(null);
 
   // --- ACTIONS BLOCS ---
   const addBlock = (type: BlockType) => {
@@ -617,6 +626,37 @@ function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, 
 
   const removeBlock = (id: string) => {
     setBlocks(blocks.filter((b: Block) => b.id !== id));
+  };
+
+  // --- LOGIQUE DRAG & DROP ---
+  const handleDragStart = (index: number) => {
+    setDraggedBlockIndex(index);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault(); // Nécessaire pour autoriser le drop
+    const element = e.currentTarget as HTMLElement;
+    element.classList.add('drag-over');
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    const element = e.currentTarget as HTMLElement;
+    element.classList.remove('drag-over');
+  };
+
+  const handleDrop = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    const element = e.currentTarget as HTMLElement;
+    element.classList.remove('drag-over');
+
+    if (draggedBlockIndex === null || draggedBlockIndex === index) return;
+
+    const newBlocks = [...blocks];
+    const [movedBlock] = newBlocks.splice(draggedBlockIndex, 1);
+    newBlocks.splice(index, 0, movedBlock);
+    
+    setBlocks(newBlocks);
+    setDraggedBlockIndex(null);
   };
 
   // --- ACTIONS FORMATTAGE ---
@@ -709,12 +749,25 @@ function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, 
             <input type="text" placeholder="Titre de la page..." className="w-full text-4xl sm:text-5xl font-black text-slate-800 placeholder-slate-300 border-none focus:ring-0 outline-none bg-transparent mb-12" value={title} onChange={e => setTitle(e.target.value)} />
 
             <div className="flex flex-wrap -mx-3 items-start">
-              {blocks.map((block: Block) => (
-                <div key={block.id} className={`${getWidthClass(block.width)} px-3 mb-6 relative group transition-all duration-300`}>
+              {blocks.map((block: Block, index: number) => (
+                <div 
+                  key={block.id} 
+                  className={`${getWidthClass(block.width)} px-3 mb-6 relative group transition-all duration-300 ${draggedBlockIndex === index ? 'dragging' : ''}`}
+                  draggable
+                  onDragStart={() => handleDragStart(index)}
+                  onDragOver={(e) => handleDragOver(e, index)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, index)}
+                >
                   
                   {/* BARRE D'OUTILS FLOTTANTE */}
-                  <div className="absolute top-2 right-5 z-20 flex items-center gap-1 bg-white shadow-xl border border-slate-200 rounded-xl p-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex-wrap max-w-[320px] justify-end">
+                  <div className="absolute top-2 right-5 z-20 flex items-center gap-1 bg-white shadow-xl border border-slate-200 rounded-xl p-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex-wrap max-w-[320px] justify-end cursor-default" draggable={false} onDragStart={(e) => e.preventDefault()}>
                     
+                    {/* Poignée Drag (Visuelle uniquement, le drag se fait sur le bloc) */}
+                    <div className="p-1.5 text-slate-300 cursor-grab active:cursor-grabbing border-r border-slate-100 mr-1">
+                      <GripVertical size={16} />
+                    </div>
+
                     {/* Formatage Texte (Bold/Italic) */}
                     {(block.type === 'text' || block.type === 'callout') && (
                       <>
@@ -765,6 +818,11 @@ function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, 
                     
                     <div className="w-px h-4 bg-slate-200 mx-1"></div>
                     <button onClick={() => removeBlock(block.id)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded" title="Supprimer"><Trash2 size={14}/></button>
+                  </div>
+
+                  {/* Indicateur de poignée visuelle au survol (Feedback utilisateur) */}
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 -ml-8 p-2 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing">
+                    <GripVertical size={20} />
                   </div>
 
                   {/* CONTENU ÉDITABLE */}
