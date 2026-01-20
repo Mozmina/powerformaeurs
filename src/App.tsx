@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from "firebase/app";
 import { 
   getFirestore, collection, addDoc, query, orderBy, 
@@ -10,7 +10,9 @@ import {
 import { 
   Folder, FileText, Plus, Trash2, ChevronRight, Home, 
   Settings, Save, X, Image as ImageIcon, Type, 
-  List, AlertCircle, ChevronDown, RotateCw, UploadCloud, Loader2, Calendar
+  List, AlertCircle, ChevronDown, RotateCw, UploadCloud, Loader2, Calendar,
+  Layout, Palette, Box, Maximize, Minimize, FileCode, File, 
+  Bold, Italic, Heading, Calculator, Sigma
 } from 'lucide-react';
 
 // --- STYLES CSS ---
@@ -19,17 +21,24 @@ const customStyles = `
   .transform-style-3d { transform-style: preserve-3d; }
   .backface-hidden { backface-visibility: hidden; }
   .rotate-y-180 { transform: rotateY(180deg); }
+  
+  /* Animation Accordéon */
+  .accordion-content { transition: grid-template-rows 0.3s ease-out; }
+  .accordion-open { grid-template-rows: 1fr; }
+  .accordion-closed { grid-template-rows: 0fr; }
+  .accordion-inner { overflow: hidden; }
+
+  /* MathJax Display fix */
+  mjx-container { outline: none !important; }
 `;
 
 // --- CONFIGURATION FIREBASE ---
-// NOTE IMPORTANTE :
 // En local sur votre machine, décommentez la ligne ci-dessous :
 // const apiKey = import.meta.env.VITE_FIREBASE_API_KEY || "";
-// Pour cette prévisualisation, nous utilisons une variable simple pour éviter l'erreur de compilation :
 const apiKey = ""; 
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY, 
+  apiKey: apiKey, 
   authDomain: "cartesmentalesrt.firebaseapp.com",
   projectId: "cartesmentalesrt",
   storageBucket: "cartesmentalesrt.firebasestorage.app",
@@ -42,14 +51,27 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const storage = getStorage(app);
+
 // --- TYPES ---
-type BlockType = 'h2' | 'text' | 'image' | 'callout' | 'flipcard' | 'accordion' | 'timeline';
+type BlockType = 'h2' | 'text' | 'image' | 'callout' | 'flipcard' | 'accordion' | 'timeline' | 'embed' | 'pdf' | 'equation';
+type BlockWidth = '100%' | '50%' | '33%';
+type BlockShadow = 'none' | 'sm' | 'md' | 'xl';
+type BlockColor = 'white' | 'slate' | 'blue' | 'violet' | 'amber' | 'emerald';
+type FontFamily = 'sans' | 'serif' | 'mono';
+type FontSize = 'sm' | 'base' | 'lg' | 'xl';
 
 interface TimelineItem {
   id: string;
   date: string;
   title: string;
   description: string;
+}
+
+interface BlockStyle {
+  backgroundColor?: BlockColor;
+  shadow?: BlockShadow;
+  fontFamily?: FontFamily;
+  fontSize?: FontSize;
 }
 
 interface Block {
@@ -62,6 +84,8 @@ interface Block {
   back?: string;
   title?: string;
   items?: TimelineItem[];
+  width?: BlockWidth;
+  style?: BlockStyle;
 }
 
 interface PageData {
@@ -78,31 +102,67 @@ interface FolderData {
   title: string;
 }
 
+// --- HELPER CLASSES ---
+const getWidthClass = (width?: BlockWidth) => {
+  switch(width) {
+    case '50%': return 'w-full md:w-1/2';
+    case '33%': return 'w-full md:w-1/3';
+    default: return 'w-full';
+  }
+};
+
+const getShadowClass = (shadow?: BlockShadow) => {
+  switch(shadow) {
+    case 'sm': return 'shadow-sm';
+    case 'md': return 'shadow-md';
+    case 'xl': return 'shadow-xl shadow-slate-200';
+    default: return 'shadow-none';
+  }
+};
+
+const getBgClass = (color?: BlockColor) => {
+  switch(color) {
+    case 'slate': return 'bg-slate-50 border-slate-200';
+    case 'blue': return 'bg-blue-50 border-blue-200';
+    case 'violet': return 'bg-violet-50 border-violet-200';
+    case 'amber': return 'bg-amber-50 border-amber-200';
+    case 'emerald': return 'bg-emerald-50 border-emerald-200';
+    default: return 'bg-white border-transparent';
+  }
+};
+
+const getFontClass = (font?: FontFamily) => {
+  switch(font) {
+    case 'serif': return 'font-serif';
+    case 'mono': return 'font-mono';
+    default: return 'font-sans';
+  }
+};
+
+const getSizeClass = (size?: FontSize) => {
+  switch(size) {
+    case 'sm': return 'text-sm';
+    case 'lg': return 'text-lg';
+    case 'xl': return 'text-xl';
+    default: return 'text-base';
+  }
+};
+
 // --- COMPOSANT PRINCIPAL ---
 export default function App() {
-  // Navigation State
   const [view, setView] = useState<'folders' | 'pages' | 'viewer' | 'editor'>('folders');
   const [currentFolder, setCurrentFolder] = useState<FolderData | null>(null);
   const [currentPage, setCurrentPage] = useState<PageData | null>(null);
-
-  // Data State
   const [folders, setFolders] = useState<FolderData[]>([]);
   const [pages, setPages] = useState<PageData[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Admin State
   const [isAdmin, setIsAdmin] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [password, setPassword] = useState("");
-
-  // Editor State
   const [editorBlocks, setEditorBlocks] = useState<Block[]>([]);
   const [editorTitle, setEditorTitle] = useState("");
   const [editorCover, setEditorCover] = useState("");
 
-  // --- EFFETS (LISTENERS FIREBASE) ---
-  
-  // Charger les dossiers
   useEffect(() => {
     const q = query(collection(db, "folders"), orderBy("createdAt", "desc"));
     const unsub = onSnapshot(q, (snap) => {
@@ -115,57 +175,39 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // Charger les pages (CORRIGÉ : Tri côté client pour éviter l'erreur d'index)
   useEffect(() => {
     if (!currentFolder) return;
-
-    // Requête simple sans 'orderBy' pour éviter l'erreur d'index composite
     const q = query(collection(db, "pages"), where("folderId", "==", currentFolder.id));
-    
     const unsub = onSnapshot(q, (snap) => {
-      // Transformation des données
       const fetchedPages = snap.docs.map(d => ({ id: d.id, ...d.data() } as PageData));
-      
-      // Tri manuel en JavaScript (plus récent en premier)
       fetchedPages.sort((a, b) => {
         const timeA = a.createdAt?.seconds || 0;
         const timeB = b.createdAt?.seconds || 0;
         return timeB - timeA;
       });
-      
       setPages(fetchedPages);
     }, (error) => {
       console.error("Erreur lecture pages:", error);
-      alert("Erreur lors de la récupération des pages. Vérifiez la console.");
     });
     return () => unsub();
   }, [currentFolder]);
 
-  // MathJax Refresh
+  // MathJax Refresh automatique
   useEffect(() => {
     if ((window as any).MathJax) {
-      setTimeout(() => (window as any).MathJax.typesetPromise?.(), 100);
+      // On attend un peu que le DOM soit rendu
+      setTimeout(() => {
+        try {
+          (window as any).MathJax.typesetPromise?.();
+        } catch (e) { console.error("MathJax error", e); }
+      }, 200);
     }
   }, [view, currentPage, editorBlocks]);
 
-
-  // --- ACTIONS NAVIGATION ---
-
-  const goHome = () => {
-    setView('folders');
-    setCurrentFolder(null);
-  };
-
-  const openFolder = (folder: FolderData) => {
-    setCurrentFolder(folder);
-    setView('pages');
-  };
-
-  const openPage = (page: PageData) => {
-    setCurrentPage(page);
-    setView('viewer');
-  };
-
+  const goHome = () => { setView('folders'); setCurrentFolder(null); };
+  const openFolder = (folder: FolderData) => { setCurrentFolder(folder); setView('pages'); };
+  const openPage = (page: PageData) => { setCurrentPage(page); setView('viewer'); };
+  
   const startCreating = () => {
     setEditorBlocks([]);
     setEditorTitle("");
@@ -173,33 +215,24 @@ export default function App() {
     setView('editor');
   };
 
-  // --- ACTIONS FIREBASE ---
-
   const handleCreateFolder = async () => {
     const name = prompt("Nom du dossier ?");
     if (name) {
-      try {
-        await addDoc(collection(db, 'folders'), { title: name, createdAt: serverTimestamp() });
-      } catch (e: any) {
-        alert("Erreur création dossier: " + e.message);
-      }
+      try { await addDoc(collection(db, 'folders'), { title: name, createdAt: serverTimestamp() }); } 
+      catch (e: any) { alert("Erreur: " + e.message); }
     }
   };
 
   const handleDelete = async (id: string, col: string) => {
     if (confirm("Supprimer définitivement ?")) {
-      try {
-        await deleteDoc(doc(db, col, id));
-      } catch (e: any) {
-        alert("Erreur suppression: " + e.message);
-      }
+      try { await deleteDoc(doc(db, col, id)); } 
+      catch (e: any) { alert("Erreur: " + e.message); }
     }
   };
 
   const handleSavePage = async () => {
-    if (!editorTitle) return alert("Veuillez ajouter un titre à la page !");
-    if (!currentFolder) return alert("Aucun dossier sélectionné.");
-
+    if (!editorTitle) return alert("Titre manquant !");
+    if (!currentFolder) return alert("Erreur dossier.");
     try {
       await addDoc(collection(db, 'pages'), {
         folderId: currentFolder.id,
@@ -209,22 +242,13 @@ export default function App() {
         createdAt: serverTimestamp()
       });
       setView('pages');
-    } catch (e: any) {
-      console.error("Erreur sauvegarde:", e);
-      alert(`Échec de la publication : ${e.message}`);
-    }
+    } catch (e: any) { alert(`Erreur: ${e.message}`); }
   };
 
   const handleLogin = () => {
-    if (password === "Formaeurs1") {
-      setIsAdmin(true);
-      setShowAuthModal(false);
-    } else {
-      alert("Mot de passe incorrect");
-    }
+    if (password === "Formaeurs1") { setIsAdmin(true); setShowAuthModal(false); } 
+    else { alert("Mot de passe incorrect"); }
   };
-
-  // --- RENDERERS (VUES) ---
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col">
@@ -238,7 +262,6 @@ export default function App() {
           </div>
           <span className="font-bold text-xl text-violet-900 tracking-tight">LearnFlow</span>
         </div>
-
         <div className="flex items-center gap-2 text-sm text-slate-500">
           <button onClick={goHome} className="hover:text-violet-600 flex items-center gap-1 transition-colors px-2 py-1 rounded-md hover:bg-slate-50">
             <Home size={14} /> Bibliothèque
@@ -246,126 +269,75 @@ export default function App() {
           {currentFolder && (
             <>
               <ChevronRight size={14} className="text-slate-300" />
-              <span className="font-semibold text-violet-600 bg-violet-50 px-2 py-1 rounded border border-violet-100">
-                {currentFolder.title}
-              </span>
+              <span className="font-semibold text-violet-600 bg-violet-50 px-2 py-1 rounded border border-violet-100">{currentFolder.title}</span>
             </>
           )}
         </div>
-
-        <button 
-          onClick={() => isAdmin ? setIsAdmin(false) : setShowAuthModal(true)}
-          className={`p-2 rounded-full border transition-all ${isAdmin ? 'bg-violet-100 text-violet-600 border-violet-200' : 'bg-white text-slate-400 border-slate-200 hover:border-violet-400 hover:text-violet-500'}`}
-        >
+        <button onClick={() => isAdmin ? setIsAdmin(false) : setShowAuthModal(true)} className={`p-2 rounded-full border transition-all ${isAdmin ? 'bg-violet-100 text-violet-600 border-violet-200' : 'bg-white text-slate-400 border-slate-200 hover:border-violet-400'}`}>
           <Settings size={20} />
         </button>
       </header>
 
       {/* MAIN CONTENT */}
-      <main className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-8 overflow-y-auto">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-8 overflow-y-auto">
         
-        {/* VUE: LISTE DES DOSSIERS */}
         {view === 'folders' && (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {loading && <p className="text-slate-400 col-span-full text-center animate-pulse">Chargement...</p>}
-            
             {folders.map(folder => (
-              <div key={folder.id} 
-                onClick={() => openFolder(folder)}
-                className="group relative bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all cursor-pointer flex flex-col gap-4"
-              >
-                <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center text-amber-500 group-hover:bg-amber-100 transition-colors">
-                  <Folder size={24} />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-lg text-slate-800 group-hover:text-violet-700 transition-colors">{folder.title}</h3>
-                  <p className="text-xs text-slate-400 mt-1">Dossier</p>
-                </div>
-                {isAdmin && (
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); handleDelete(folder.id, 'folders'); }}
-                    className="absolute top-3 right-3 p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                )}
+              <div key={folder.id} onClick={() => openFolder(folder)} className="group relative bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all cursor-pointer flex flex-col gap-4">
+                <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center text-amber-500 group-hover:bg-amber-100 transition-colors"><Folder size={24} /></div>
+                <div><h3 className="font-semibold text-lg text-slate-800 group-hover:text-violet-700 transition-colors">{folder.title}</h3><p className="text-xs text-slate-400 mt-1">Dossier</p></div>
+                {isAdmin && <button onClick={(e) => { e.stopPropagation(); handleDelete(folder.id, 'folders'); }} className="absolute top-3 right-3 p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={16} /></button>}
               </div>
             ))}
-
             {isAdmin && (
-              <button 
-                onClick={handleCreateFolder}
-                className="border-2 border-dashed border-slate-300 rounded-xl p-6 flex flex-col items-center justify-center gap-3 text-slate-400 hover:border-violet-500 hover:text-violet-600 hover:bg-violet-50 transition-all group"
-              >
-                <div className="p-2 rounded-full bg-slate-50 group-hover:bg-violet-100 transition-colors">
-                  <Plus size={24} />
-                </div>
-                <span className="font-medium">Nouveau Dossier</span>
+              <button onClick={handleCreateFolder} className="border-2 border-dashed border-slate-300 rounded-xl p-6 flex flex-col items-center justify-center gap-3 text-slate-400 hover:border-violet-500 hover:text-violet-600 hover:bg-violet-50 transition-all group">
+                <div className="p-2 rounded-full bg-slate-50 group-hover:bg-violet-100 transition-colors"><Plus size={24} /></div><span className="font-medium">Nouveau Dossier</span>
               </button>
             )}
           </div>
         )}
 
-        {/* VUE: LISTE DES PAGES */}
         {view === 'pages' && (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
             {pages.length === 0 && <p className="col-span-full text-center text-slate-400 py-10">Ce dossier est vide.</p>}
-            
             {pages.map(page => (
-              <div key={page.id} 
-                onClick={() => openPage(page)}
-                className="group relative bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all cursor-pointer overflow-hidden flex flex-col h-64"
-              >
+              <div key={page.id} onClick={() => openPage(page)} className="group relative bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all cursor-pointer overflow-hidden flex flex-col h-64">
                 <div className="h-32 bg-slate-100 relative overflow-hidden group-hover:opacity-90 transition-opacity">
-                  {page.coverUrl ? (
-                    <img src={page.coverUrl} alt="cover" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
-                  ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-violet-500 to-fuchsia-600 opacity-80" />
-                  )}
+                  {page.coverUrl ? <img src={page.coverUrl} alt="cover" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" /> : <div className="w-full h-full bg-gradient-to-br from-violet-500 to-fuchsia-600 opacity-80" />}
                 </div>
                 <div className="p-5 flex-1 bg-white relative flex flex-col justify-between">
-                  <div>
-                    <h3 className="font-bold text-slate-800 line-clamp-2 group-hover:text-violet-700 transition-colors">{page.title}</h3>
-                  </div>
-                  <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                    {page.createdAt?.seconds ? new Date(page.createdAt.seconds * 1000).toLocaleDateString() : 'Récemment'}
-                  </p>
+                  <h3 className="font-bold text-slate-800 line-clamp-2 group-hover:text-violet-700 transition-colors">{page.title}</h3>
+                  <p className="text-xs text-slate-400 mt-2 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>{page.createdAt?.seconds ? new Date(page.createdAt.seconds * 1000).toLocaleDateString() : 'Récemment'}</p>
                 </div>
-                {isAdmin && (
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); handleDelete(page.id, 'pages'); }}
-                    className="absolute top-2 right-2 p-1.5 bg-white/90 text-slate-400 rounded-lg hover:bg-red-500 hover:text-white shadow-sm transition-all"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                )}
+                {isAdmin && <button onClick={(e) => { e.stopPropagation(); handleDelete(page.id, 'pages'); }} className="absolute top-2 right-2 p-1.5 bg-white/90 text-slate-400 rounded-lg hover:bg-red-500 hover:text-white shadow-sm transition-all"><Trash2 size={14} /></button>}
               </div>
             ))}
           </div>
         )}
 
-        {/* VUE: LECTURE PAGE */}
+        {/* VUE: LECTURE PAGE (VIEWER) */}
         {view === 'viewer' && currentPage && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 min-h-[80vh] overflow-hidden">
-             {/* Cover */}
              {currentPage.coverUrl ? (
                <div className="h-64 w-full overflow-hidden relative">
                  <img src={currentPage.coverUrl} alt="Cover" className="w-full h-full object-cover" />
                  <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
                </div>
-             ) : (
-                <div className="h-32 bg-slate-50 border-b border-slate-100"></div>
-             )}
+             ) : <div className="h-32 bg-slate-50 border-b border-slate-100"></div>}
              
-             <div className="p-8 sm:p-12 max-w-3xl mx-auto -mt-10 relative z-10">
-               <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 mb-8">
-                 <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">{currentPage.title}</h1>
+             <div className="p-8 sm:p-12 max-w-5xl mx-auto -mt-10 relative z-10">
+               <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 mb-12">
+                 <h1 className="text-3xl sm:text-5xl font-extrabold text-slate-900 tracking-tight">{currentPage.title}</h1>
                </div>
 
-               <div className="space-y-8">
+               {/* GRILLE DE CONTENU (LAYOUT) */}
+               <div className="flex flex-wrap -mx-3 items-stretch">
                  {currentPage.blocks.map(block => (
-                   <BlockRenderer key={block.id} block={block} />
+                   <div key={block.id} className={`${getWidthClass(block.width)} px-3 mb-6`}>
+                      <BlockRenderer block={block} />
+                   </div>
                  ))}
                </div>
              </div>
@@ -373,50 +345,24 @@ export default function App() {
         )}
       </main>
 
-      {/* BOUTON FLOTTANT (FAB) */}
       {isAdmin && view === 'pages' && (
-        <button 
-          onClick={startCreating}
-          className="fixed bottom-8 right-8 w-14 h-14 bg-violet-600 text-white rounded-full shadow-lg shadow-violet-600/30 flex items-center justify-center hover:scale-110 hover:bg-violet-700 transition-all duration-300 z-40 group"
-        >
+        <button onClick={startCreating} className="fixed bottom-8 right-8 w-14 h-14 bg-violet-600 text-white rounded-full shadow-lg shadow-violet-600/30 flex items-center justify-center hover:scale-110 hover:bg-violet-700 transition-all duration-300 z-40 group">
           <Plus size={28} className="group-hover:rotate-90 transition-transform duration-300" />
         </button>
       )}
 
-      {/* MODAL AUTH */}
       {showAuthModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center border border-slate-100">
             <h3 className="text-2xl font-bold text-slate-800 mb-2">Accès Formateur</h3>
-            <input 
-              type="password" 
-              placeholder="Mot de passe" 
-              className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-200 outline-none transition-all mb-4 text-center"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleLogin()}
-            />
-            <div className="flex gap-3">
-              <button onClick={() => setShowAuthModal(false)} className="flex-1 py-3 text-slate-500 hover:bg-slate-50 rounded-xl transition-colors font-medium">Annuler</button>
-              <button onClick={handleLogin} className="flex-1 py-3 bg-violet-600 text-white rounded-xl font-semibold hover:bg-violet-700 transition-colors shadow-lg shadow-violet-200">Entrer</button>
-            </div>
+            <input type="password" placeholder="Mot de passe" className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-200 outline-none transition-all mb-4 text-center" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} />
+            <div className="flex gap-3"><button onClick={() => setShowAuthModal(false)} className="flex-1 py-3 text-slate-500 hover:bg-slate-50 rounded-xl transition-colors font-medium">Annuler</button><button onClick={handleLogin} className="flex-1 py-3 bg-violet-600 text-white rounded-xl font-semibold hover:bg-violet-700 transition-colors shadow-lg shadow-violet-200">Entrer</button></div>
           </div>
         </div>
       )}
 
-      {/* EDITEUR GAMMA (OVERLAY) */}
       {view === 'editor' && (
-        <Editor 
-          title={editorTitle} 
-          setTitle={setEditorTitle}
-          cover={editorCover}
-          setCover={setEditorCover}
-          blocks={editorBlocks} 
-          setBlocks={setEditorBlocks} 
-          onClose={() => setView('pages')} 
-          onSave={handleSavePage} 
-          storage={storage}
-        />
+        <Editor title={editorTitle} setTitle={setEditorTitle} cover={editorCover} setCover={setEditorCover} blocks={editorBlocks} setBlocks={setEditorBlocks} onClose={() => setView('pages')} onSave={handleSavePage} storage={storage} />
       )}
     </div>
   );
@@ -427,436 +373,481 @@ export default function App() {
 function BlockRenderer({ block }: { block: Block }) {
   const [flipped, setFlipped] = useState(false);
   const [open, setOpen] = useState(false);
+  
+  // Styles dynamiques
+  const bgClass = getBgClass(block.style?.backgroundColor);
+  const shadowClass = getShadowClass(block.style?.shadow);
+  const fontClass = getFontClass(block.style?.fontFamily);
+  const sizeClass = getSizeClass(block.style?.fontSize);
+  const borderClass = block.style?.backgroundColor && block.style.backgroundColor !== 'white' ? 'border' : 'border border-slate-100';
+  
+  const containerClasses = `h-full rounded-2xl p-6 ${bgClass} ${borderClass} ${shadowClass} ${fontClass} ${sizeClass} transition-shadow duration-300 overflow-hidden`;
 
-  switch (block.type) {
-    case 'h2':
-      return <h2 className="text-2xl font-bold text-slate-800 mt-10 mb-6 pb-2 border-b border-slate-100 flex items-center gap-3"><span className="w-2 h-8 bg-violet-500 rounded-full"></span>{block.content}</h2>;
-    case 'text':
-      return <div className="text-lg text-slate-600 leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: block.content || '' }} />;
-    case 'callout':
-      const colors = {
-        info: 'bg-blue-50 border-blue-200 text-blue-900',
-        warn: 'bg-amber-50 border-amber-200 text-amber-900',
-        idea: 'bg-emerald-50 border-emerald-200 text-emerald-900'
-      };
-      return (
-        <div className={`p-6 rounded-xl border flex gap-4 my-4 ${colors[block.subType || 'info']}`}>
-          <AlertCircle className="shrink-0 mt-1 opacity-70" />
-          <div className="text-base font-medium" dangerouslySetInnerHTML={{ __html: block.content || '' }} />
-        </div>
-      );
-    case 'flipcard':
-      return (
-        <div className="h-64 w-full max-w-md mx-auto perspective-1000 cursor-pointer group my-8" onClick={() => setFlipped(!flipped)}>
-          <div className={`relative w-full h-full duration-500 transform-style-3d transition-transform ${flipped ? 'rotate-y-180' : ''}`}>
-            <div className="absolute inset-0 backface-hidden bg-white border-2 border-violet-100 rounded-2xl flex items-center justify-center p-8 text-center shadow-sm group-hover:shadow-lg group-hover:border-violet-300 transition-all">
-              <span className="text-xl font-semibold text-slate-700">{block.front}</span>
-              <span className="absolute bottom-4 text-xs text-slate-400 font-semibold uppercase tracking-widest">Retourner</span>
-            </div>
-            <div className="absolute inset-0 backface-hidden bg-violet-600 rounded-2xl rotate-y-180 flex items-center justify-center p-8 text-center shadow-xl text-white">
-              <span className="text-xl font-medium">{block.back}</span>
-            </div>
-          </div>
-        </div>
-      );
-    case 'accordion':
-      return (
-        <div className="border border-slate-200 rounded-xl overflow-hidden my-4">
-          <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 transition-colors text-left font-semibold text-slate-800">
-            {block.title}
-            <ChevronDown className={`transform transition-transform duration-300 text-slate-400 ${open ? 'rotate-180' : ''}`} />
-          </button>
-          <div className={`bg-slate-50 overflow-hidden transition-all duration-300 ${open ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
-            <div className="p-4 border-t border-slate-200 text-slate-600 leading-relaxed" dangerouslySetInnerHTML={{ __html: block.content || '' }} />
-          </div>
-        </div>
-      );
-    case 'timeline':
-      // RENDERER AMÉLIORÉ POUR TIMELINE
-      return (
-        <div className="pl-4 border-l-2 border-slate-200 ml-3 space-y-8 py-4 relative my-8">
-           {(block.items || []).map((item) => (
-             <div key={item.id} className="relative group">
-               {/* Point sur la ligne */}
-               <div className="absolute -left-[23px] top-1.5 w-4 h-4 bg-white border-4 border-violet-300 rounded-full box-content group-hover:border-violet-600 transition-colors shadow-sm" />
-               
-               <div className="pl-4">
-                 <div className="flex items-center gap-3 mb-1">
-                   <span className="text-xs font-bold uppercase text-violet-600 bg-violet-50 px-2 py-0.5 rounded border border-violet-100">{item.date}</span>
-                   <h4 className="font-bold text-slate-800">{item.title}</h4>
-                 </div>
-                 <div className="text-slate-600 text-sm leading-relaxed whitespace-pre-wrap">{item.description}</div>
-               </div>
+  const renderContent = () => {
+    switch (block.type) {
+      case 'h2':
+        return <h2 className="text-2xl font-bold text-slate-800 pb-2 border-b border-slate-200/50 flex items-center gap-3"><span className="w-2 h-8 bg-violet-500 rounded-full"></span>{block.content}</h2>;
+      case 'text':
+        // Rendu HTML sécurisé pour le texte enrichi
+        return <div className="leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: block.content || '' }} />;
+      case 'equation':
+        return (
+          <div className="flex flex-col items-center justify-center p-4 bg-slate-50/50 rounded-lg">
+             {/* Utilisation de délimiteurs pour MathJax */}
+             <div className="text-lg">
+               {`$$ ${block.content || ''} $$`}
              </div>
-           ))}
-           {(block.items || []).length === 0 && <p className="text-slate-400 italic text-sm">Aucun événement dans la timeline.</p>}
-        </div>
-      );
-    case 'image':
-      return (
-        <div className="my-6">
-          <img src={block.url} alt="content" className="rounded-xl shadow-md w-full border border-slate-100" loading="lazy" />
-        </div>
-      );
-    default:
-      return null;
+          </div>
+        );
+      case 'callout':
+        const colors = {
+          info: 'bg-blue-50/50 border-blue-200 text-blue-900',
+          warn: 'bg-amber-50/50 border-amber-200 text-amber-900',
+          idea: 'bg-emerald-50/50 border-emerald-200 text-emerald-900'
+        };
+        return (
+          <div className={`p-4 rounded-xl border flex gap-4 ${colors[block.subType || 'info']}`}>
+            <AlertCircle className="shrink-0 mt-1 opacity-70" />
+            <div className="font-medium" dangerouslySetInnerHTML={{ __html: block.content || '' }} />
+          </div>
+        );
+      case 'flipcard':
+        return (
+          <div className="h-64 w-full perspective-1000 cursor-pointer group" onClick={() => setFlipped(!flipped)}>
+            <div className={`relative w-full h-full duration-500 transform-style-3d transition-transform ${flipped ? 'rotate-y-180' : ''}`}>
+              <div className="absolute inset-0 backface-hidden bg-white border-2 border-violet-100 rounded-2xl flex items-center justify-center p-8 text-center shadow-sm group-hover:shadow-lg group-hover:border-violet-300 transition-all">
+                <span className="text-xl font-semibold text-slate-700">{block.front}</span>
+                <span className="absolute bottom-4 text-xs text-slate-400 font-semibold uppercase tracking-widest">Retourner</span>
+              </div>
+              <div className="absolute inset-0 backface-hidden bg-violet-600 rounded-2xl rotate-y-180 flex items-center justify-center p-8 text-center shadow-xl text-white">
+                <span className="text-xl font-medium">{block.back}</span>
+              </div>
+            </div>
+          </div>
+        );
+      case 'accordion':
+        return (
+          <div className="border border-slate-200 rounded-xl overflow-hidden bg-white/60 shadow-sm hover:shadow-md transition-shadow">
+            <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 transition-colors text-left font-semibold text-slate-800">
+              {block.title}
+              <ChevronDown className={`transform transition-transform duration-300 text-slate-400 ${open ? 'rotate-180' : ''}`} />
+            </button>
+            <div className={`grid accordion-content ${open ? 'accordion-open' : 'accordion-closed'}`}>
+               <div className="accordion-inner p-4 border-t border-slate-100 text-slate-600 leading-relaxed bg-slate-50/50">
+                 <div dangerouslySetInnerHTML={{ __html: block.content || '' }} />
+               </div>
+            </div>
+          </div>
+        );
+      case 'timeline':
+        return (
+          <div className="space-y-6 relative py-2">
+             <div className="absolute left-[7px] top-4 bottom-4 w-0.5 bg-slate-200"></div>
+             {(block.items || []).map((item) => (
+               <div key={item.id} className="relative pl-8 group">
+                 <div className="absolute left-0 top-1.5 w-4 h-4 bg-white border-2 border-slate-300 rounded-full group-hover:border-violet-500 group-hover:scale-125 transition-all shadow-sm z-10" />
+                 <div>
+                   <span className="inline-block text-xs font-bold uppercase text-violet-600 bg-violet-50 px-2 py-0.5 rounded border border-violet-100 mb-1">{item.date}</span>
+                   <h4 className="font-bold text-slate-800">{item.title}</h4>
+                   <div className="text-slate-600 text-sm leading-relaxed mt-1">{item.description}</div>
+                 </div>
+               </div>
+             ))}
+          </div>
+        );
+      case 'image':
+        return (
+          <div className="rounded-xl overflow-hidden shadow-sm border border-slate-100">
+            <img src={block.url} alt="content" className="w-full h-auto" loading="lazy" />
+          </div>
+        );
+      case 'embed':
+        return (
+          <div className="rounded-xl overflow-hidden shadow-sm border border-slate-100 bg-slate-100 relative aspect-video">
+             {block.url ? (
+               <iframe 
+                 src={block.url} 
+                 className="absolute inset-0 w-full h-full" 
+                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                 allowFullScreen
+                 title="Embed Content"
+               />
+             ) : (
+               <div className="flex items-center justify-center h-full text-slate-400">Contenu Embed vide</div>
+             )}
+          </div>
+        );
+      case 'pdf':
+        return (
+          <div className="rounded-xl overflow-hidden shadow-sm border border-slate-100 h-[500px] bg-slate-50">
+             {block.url ? (
+               <object data={block.url} type="application/pdf" className="w-full h-full">
+                 <div className="flex flex-col items-center justify-center h-full text-slate-500 p-4 text-center">
+                   <p className="mb-2">Impossible d'afficher le PDF directement.</p>
+                   <a href={block.url} target="_blank" rel="noopener noreferrer" className="text-violet-600 underline font-medium">Télécharger le fichier</a>
+                 </div>
+               </object>
+             ) : (
+               <div className="flex items-center justify-center h-full text-slate-400">Aucun PDF sélectionné</div>
+             )}
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
+  if (block.type === 'h2' && (!block.style?.backgroundColor || block.style.backgroundColor === 'white')) {
+    return <div className="py-4">{renderContent()}</div>;
   }
+
+  return (
+    <div className={containerClasses}>
+      {renderContent()}
+    </div>
+  );
 }
 
-// --- ÉDITEUR ---
+// --- ÉDITEUR DE TEXTE ENRICHI (TOOLBAR) ---
+function RichTextToolbar({ onAction }: { onAction: (tag: string, endTag?: string) => void }) {
+  return (
+    <div className="flex items-center gap-1 p-1 bg-slate-100 border border-slate-200 rounded-lg mb-2 w-fit">
+      <button onClick={() => onAction('<b>', '</b>')} className="p-1.5 hover:bg-white rounded text-slate-600 hover:text-slate-900" title="Gras"><Bold size={14}/></button>
+      <button onClick={() => onAction('<i>', '</i>')} className="p-1.5 hover:bg-white rounded text-slate-600 hover:text-slate-900" title="Italique"><Italic size={14}/></button>
+      <div className="w-px h-4 bg-slate-300 mx-1"></div>
+      <button onClick={() => onAction('<h3>', '</h3>')} className="p-1.5 hover:bg-white rounded text-slate-600 hover:text-slate-900" title="Sous-titre"><Heading size={14}/></button>
+    </div>
+  );
+}
+
+// --- CLAVIER VIRTUEL MATHS ---
+function MathKeyboard({ onInsert }: { onInsert: (symbol: string) => void }) {
+  const symbols = [
+    '+', '-', '=', '\\times', '\\div', '\\pm', 
+    '\\alpha', '\\beta', '\\pi', '\\theta', '\\infty', 
+    '\\sqrt{}', 'x^2', '\\frac{a}{b}', '\\sum', '\\int', 
+    '(', ')', '[', ']', '\\{', '\\}'
+  ];
+
+  return (
+    <div className="grid grid-cols-6 gap-2 mt-2 p-2 bg-slate-50 border border-slate-200 rounded-xl">
+      {symbols.map(sym => (
+        <button 
+          key={sym} 
+          onClick={() => onInsert(sym === '\\sqrt{}' ? '\\sqrt{}' : sym + ' ')}
+          className="p-2 bg-white border border-slate-100 rounded hover:bg-violet-50 hover:border-violet-200 hover:text-violet-700 text-sm font-mono transition-colors"
+        >
+          {sym.replace('\\', '')}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// --- ÉDITEUR PRINCIPAL ---
 
 function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, onSave, storage }: any) {
   const [uploading, setUploading] = useState(false);
+  // Refs pour gérer la position du curseur
+  const textRefs = useRef<{[key: string]: HTMLTextAreaElement | null}>({});
 
+  // --- ACTIONS BLOCS ---
   const addBlock = (type: BlockType) => {
-    const newBlock: Block = { id: Date.now().toString(), type };
+    const newBlock: Block = { 
+      id: Date.now().toString(), 
+      type, 
+      width: '100%', 
+      style: { backgroundColor: 'white', shadow: 'none', fontFamily: 'sans', fontSize: 'base' }
+    };
     if (type === 'callout') newBlock.subType = 'info';
-    if (type === 'timeline') newBlock.items = []; // Init timeline array
+    if (type === 'timeline') newBlock.items = [];
     setBlocks([...blocks, newBlock]);
   };
 
-  const updateBlock = (id: string, field: keyof Block, value: any) => {
-    setBlocks(blocks.map((b: Block) => b.id === id ? { ...b, [field]: value } : b));
+  const updateBlock = (id: string, updates: Partial<Block>) => {
+    setBlocks(blocks.map((b: Block) => b.id === id ? { ...b, ...updates } : b));
+  };
+  
+  const updateBlockStyle = (id: string, styleUpdates: Partial<BlockStyle>) => {
+    setBlocks(blocks.map((b: Block) => b.id === id ? { ...b, style: { ...b.style, ...styleUpdates } } : b));
   };
 
   const removeBlock = (id: string) => {
     setBlocks(blocks.filter((b: Block) => b.id !== id));
   };
 
-  // --- LOGIQUE TIMELINE (Gestion des sous-éléments) ---
-  const addTimelineItem = (blockId: string) => {
-    const newItem: TimelineItem = {
-      id: Date.now().toString(),
-      date: '2024',
-      title: 'Nouvel événement',
-      description: 'Description...'
-    };
+  // --- HELPER TEXTE ENRICHI ---
+  const insertTag = (blockId: string, startTag: string, endTag: string = '') => {
+    const textarea = textRefs.current[blockId];
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    const before = text.substring(0, start);
+    const selection = text.substring(start, end);
+    const after = text.substring(end);
+
+    const newContent = before + startTag + selection + endTag + after;
+    updateBlock(blockId, { content: newContent });
     
-    setBlocks(blocks.map((b: Block) => {
-      if (b.id === blockId) {
-        return { ...b, items: [...(b.items || []), newItem] };
-      }
-      return b;
-    }));
+    // On remet le focus après update
+    setTimeout(() => {
+        textarea.focus();
+        textarea.setSelectionRange(start + startTag.length, end + startTag.length);
+    }, 0);
   };
 
+  // --- ACTIONS SPECIFIQUES ---
+  const addTimelineItem = (blockId: string) => {
+    const newItem: TimelineItem = { id: Date.now().toString(), date: '2024', title: 'Nouvel événement', description: 'Description...' };
+    setBlocks(blocks.map((b: Block) => b.id === blockId ? { ...b, items: [...(b.items || []), newItem] } : b));
+  };
   const updateTimelineItem = (blockId: string, itemId: string, field: keyof TimelineItem, value: string) => {
-    setBlocks(blocks.map((b: Block) => {
-      if (b.id === blockId) {
-        const newItems = (b.items || []).map(item => 
-          item.id === itemId ? { ...item, [field]: value } : item
-        );
-        return { ...b, items: newItems };
-      }
-      return b;
-    }));
+    setBlocks(blocks.map((b: Block) => b.id === blockId ? { ...b, items: (b.items || []).map(i => i.id === itemId ? { ...i, [field]: value } : i) } : b));
   };
-
   const removeTimelineItem = (blockId: string, itemId: string) => {
-    setBlocks(blocks.map((b: Block) => {
-      if (b.id === blockId) {
-        return { ...b, items: (b.items || []).filter(i => i.id !== itemId) };
-      }
-      return b;
-    }));
+    setBlocks(blocks.map((b: Block) => b.id === blockId ? { ...b, items: (b.items || []).filter(i => i.id !== itemId) } : b));
   };
 
-  // --- LOGIQUE UPLOAD ---
+  // --- UPLOAD ---
   const handleFileUpload = async (file: File) => {
     if (!file || !storage) return null;
     const storageRef = ref(storage, `uploads/${Date.now()}_${file.name}`);
     const uploadTask = uploadBytesResumable(storageRef, file);
-    
     return new Promise<string>((resolve, reject) => {
-      uploadTask.on('state_changed', 
-        (snapshot) => { /* Progress */ },
-        (error) => reject(error),
-        async () => {
-          const url = await getDownloadURL(uploadTask.snapshot.ref);
-          resolve(url);
-        }
-      );
+      uploadTask.on('state_changed', () => {}, (err) => reject(err), async () => { resolve(await getDownloadURL(uploadTask.snapshot.ref)); });
     });
   };
 
   const onUploadCover = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
+    if (e.target.files?.[0]) {
       setUploading(true);
-      try {
-        const url = await handleFileUpload(e.target.files[0]);
-        if (url) setCover(url);
-      } catch (err) {
-        alert("Erreur upload (Vérifiez Storage Rules ou Mode Démo)");
-      } finally {
-        setUploading(false);
-      }
+      try { const url = await handleFileUpload(e.target.files[0]); if (url) setCover(url); } 
+      catch { alert("Erreur upload"); } finally { setUploading(false); }
     }
   };
 
-  const onUploadBlockImage = async (e: React.ChangeEvent<HTMLInputElement>, blockId: string) => {
-    if (e.target.files && e.target.files[0]) {
+  const onUploadFile = async (e: React.ChangeEvent<HTMLInputElement>, blockId: string) => {
+    if (e.target.files?.[0]) {
       setUploading(true);
-      try {
-        const url = await handleFileUpload(e.target.files[0]);
-        if (url) updateBlock(blockId, 'url', url);
-      } catch (err) {
-        alert("Erreur upload image");
-      } finally {
-        setUploading(false);
-      }
+      try { const url = await handleFileUpload(e.target.files[0]); if (url) updateBlock(blockId, { url }); } 
+      catch { alert("Erreur upload"); } finally { setUploading(false); }
     }
   };
 
   return (
     <div className="fixed inset-0 bg-slate-50 z-50 flex overflow-hidden">
-      {/* Sidebar Tools */}
+      {/* SIDEBAR */}
       <aside className="w-80 bg-white border-r border-slate-200 flex flex-col h-full overflow-y-auto shrink-0 shadow-[4px_0_24px_rgba(0,0,0,0.02)] z-10">
         <div className="p-6 border-b border-slate-100 bg-white sticky top-0 z-10">
-          <h2 className="font-bold text-slate-800 text-lg flex items-center gap-2">
-            <Settings size={18} className="text-violet-500"/> Boîte à outils
-          </h2>
+          <h2 className="font-bold text-slate-800 text-lg flex items-center gap-2"><Settings size={18} className="text-violet-500"/> Boîte à outils</h2>
         </div>
-        
         <div className="p-4 space-y-6">
-          <ToolSection title="Structure">
+          <ToolSection title="Structure & Texte">
             <ToolButton icon={Type} label="Titre de Section" onClick={() => addBlock('h2')} />
-            <ToolButton icon={FileText} label="Texte Riche" onClick={() => addBlock('text')} />
+            <ToolButton icon={FileText} label="Texte Enrichi" onClick={() => addBlock('text')} />
+            <ToolButton icon={Sigma} label="Équation Math" onClick={() => addBlock('equation')} />
           </ToolSection>
-
           <ToolSection title="Interactif">
             <ToolButton icon={RotateCw} label="Flashcard" onClick={() => addBlock('flipcard')} />
             <ToolButton icon={List} label="Accordéon" onClick={() => addBlock('accordion')} />
-            <ToolButton icon={Calendar} label="Timeline (Chronologie)" onClick={() => addBlock('timeline')} />
+            <ToolButton icon={Calendar} label="Timeline" onClick={() => addBlock('timeline')} />
           </ToolSection>
-
-          <ToolSection title="Visuel">
-            <ToolButton icon={AlertCircle} label="Callout (Note)" onClick={() => addBlock('callout')} />
+          <ToolSection title="Médias & Embed">
             <ToolButton icon={ImageIcon} label="Image" onClick={() => addBlock('image')} />
+            <ToolButton icon={FileCode} label="Embed (Canva/YouTube)" onClick={() => addBlock('embed')} />
+            <ToolButton icon={File} label="Document PDF" onClick={() => addBlock('pdf')} />
+            <ToolButton icon={AlertCircle} label="Callout" onClick={() => addBlock('callout')} />
           </ToolSection>
 
           <div className="pt-6 mt-2 border-t border-slate-100">
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 block">Couverture</label>
-            <div className="flex gap-2">
-              <input 
-                type="text" 
-                placeholder="URL de l'image..." 
-                className="w-full text-sm p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-violet-200 outline-none transition-all"
-                value={cover}
-                onChange={(e) => setCover(e.target.value)}
-              />
-              <label className={`p-2.5 bg-slate-100 rounded-lg cursor-pointer hover:bg-violet-100 hover:text-violet-600 transition-colors ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                <input type="file" hidden onChange={onUploadCover} accept="image/*" disabled={uploading} />
-                {uploading ? <Loader2 className="animate-spin" size={20}/> : <UploadCloud size={20} />}
-              </label>
-            </div>
-            {cover && (
-              <div className="mt-3 rounded-lg overflow-hidden h-24 border border-slate-200 relative">
-                <img src={cover} className="w-full h-full object-cover" alt="preview"/>
-                <button onClick={() => setCover('')} className="absolute top-1 right-1 bg-white/90 p-1 rounded-md text-red-500 hover:bg-red-500 hover:text-white transition-colors"><X size={14}/></button>
-              </div>
-            )}
+             <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 block">Couverture</label>
+             <div className="flex gap-2">
+                <input type="text" placeholder="URL image..." className="w-full text-sm p-2.5 border border-slate-200 rounded-lg" value={cover} onChange={(e) => setCover(e.target.value)} />
+                <label className="p-2.5 bg-slate-100 rounded-lg cursor-pointer hover:bg-violet-100"><input type="file" hidden onChange={onUploadCover} accept="image/*" disabled={uploading} /><UploadCloud size={20} /></label>
+             </div>
           </div>
         </div>
       </aside>
 
-      {/* Main Canvas */}
+      {/* CANVAS */}
       <div className="flex-1 flex flex-col h-full relative bg-slate-50/50">
         <div className="absolute top-6 right-8 flex gap-3 z-20">
-          <button onClick={onClose} className="px-5 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 font-medium shadow-sm transition-all hover:shadow-md">Annuler</button>
-          <button onClick={onSave} className="px-6 py-2.5 bg-violet-600 text-white rounded-xl hover:bg-violet-700 font-medium shadow-lg shadow-violet-200 flex items-center gap-2 transition-all hover:-translate-y-0.5">
-            <Save size={18} /> Publier
-          </button>
+          <button onClick={onClose} className="px-5 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 font-medium shadow-sm">Annuler</button>
+          <button onClick={onSave} className="px-6 py-2.5 bg-violet-600 text-white rounded-xl hover:bg-violet-700 font-medium shadow-lg shadow-violet-200 flex items-center gap-2"><Save size={18} /> Publier</button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-8 sm:p-12">
-          <div className="max-w-3xl mx-auto min-h-[90%] bg-white rounded-2xl shadow-sm p-12 border border-slate-200 relative">
-            
-            {/* Title Input */}
-            <div className="group mb-12">
-              <input 
-                type="text" 
-                placeholder="Titre de votre page..." 
-                className="w-full text-4xl sm:text-5xl font-black text-slate-800 placeholder-slate-300 border-none focus:ring-0 outline-none bg-transparent"
-                value={title}
-                onChange={e => setTitle(e.target.value)}
-                autoFocus
-              />
-              <div className="h-1 w-20 bg-violet-100 mt-4 rounded-full group-focus-within:bg-violet-500 group-focus-within:w-full transition-all duration-500"></div>
-            </div>
+          <div className="max-w-5xl mx-auto min-h-[90%] bg-white rounded-2xl shadow-sm p-12 border border-slate-200 relative">
+            <input type="text" placeholder="Titre de la page..." className="w-full text-4xl sm:text-5xl font-black text-slate-800 placeholder-slate-300 border-none focus:ring-0 outline-none bg-transparent mb-12" value={title} onChange={e => setTitle(e.target.value)} />
 
-            {/* Blocks */}
-            <div className="space-y-6">
+            <div className="flex flex-wrap -mx-3 items-start">
               {blocks.map((block: Block) => (
-                <div key={block.id} className="group relative border-2 border-transparent hover:border-violet-100 hover:bg-violet-50/30 rounded-xl p-4 -mx-4 transition-all duration-200">
+                <div key={block.id} className={`${getWidthClass(block.width)} px-3 mb-6 relative group transition-all duration-300`}>
                   
-                  {/* Controls */}
-                  <div className="absolute -right-12 top-2 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-2">
-                     <button onClick={() => removeBlock(block.id)} className="p-2 bg-white border border-slate-200 text-red-400 rounded-lg hover:text-red-600 hover:border-red-200 shadow-sm transition-colors" title="Supprimer"><Trash2 size={16}/></button>
+                  {/* BARRE D'OUTILS FLOTTANTE */}
+                  <div className="absolute top-2 right-5 z-20 flex items-center gap-1 bg-white shadow-lg border border-slate-100 rounded-lg p-1 opacity-0 group-hover:opacity-100 transition-opacity flex-wrap max-w-[250px] justify-end">
+                    
+                    {/* Style de Texte (Police, Taille) */}
+                    <select 
+                      className="text-xs p-1 bg-slate-50 rounded border-none focus:ring-0" 
+                      value={block.style?.fontFamily || 'sans'} 
+                      onChange={(e) => updateBlockStyle(block.id, { fontFamily: e.target.value as FontFamily })}
+                    >
+                      <option value="sans">Sans</option>
+                      <option value="serif">Serif</option>
+                      <option value="mono">Mono</option>
+                    </select>
+
+                     <select 
+                      className="text-xs p-1 bg-slate-50 rounded border-none focus:ring-0" 
+                      value={block.style?.fontSize || 'base'} 
+                      onChange={(e) => updateBlockStyle(block.id, { fontSize: e.target.value as FontSize })}
+                    >
+                      <option value="sm">Petit</option>
+                      <option value="base">Normal</option>
+                      <option value="lg">Grand</option>
+                      <option value="xl">Titre</option>
+                    </select>
+
+                    <div className="w-px h-4 bg-slate-200 mx-1"></div>
+
+                    {/* Layout */}
+                    <button onClick={() => updateBlock(block.id, { width: '100%' })} className={`p-1.5 rounded hover:bg-slate-100 ${block.width === '100%' ? 'text-violet-600 bg-violet-50' : 'text-slate-400'}`} title="Pleine largeur"><Maximize size={14}/></button>
+                    <button onClick={() => updateBlock(block.id, { width: '50%' })} className={`p-1.5 rounded hover:bg-slate-100 ${block.width === '50%' ? 'text-violet-600 bg-violet-50' : 'text-slate-400'}`} title="Moitié"><Layout size={14}/></button>
+                    <button onClick={() => updateBlock(block.id, { width: '33%' })} className={`p-1.5 rounded hover:bg-slate-100 ${block.width === '33%' ? 'text-violet-600 bg-violet-50' : 'text-slate-400'}`} title="Tiers"><Minimize size={14}/></button>
+                    
+                    <div className="w-px h-4 bg-slate-200 mx-1"></div>
+
+                    {/* Couleur */}
+                    <div className="flex gap-1 px-1">
+                       {['white', 'blue', 'violet', 'amber', 'emerald'].map((c) => (
+                         <button key={c} onClick={() => updateBlockStyle(block.id, { backgroundColor: c as BlockColor })} className={`w-3 h-3 rounded-full border border-slate-200 ${getBgClass(c as BlockColor)} hover:scale-125 transition-transform`}></button>
+                       ))}
+                    </div>
+                    
+                    <div className="w-px h-4 bg-slate-200 mx-1"></div>
+                    <button onClick={() => updateBlockStyle(block.id, { shadow: block.style?.shadow === 'md' ? 'none' : 'md' })} className={`p-1.5 rounded hover:bg-slate-100 ${block.style?.shadow === 'md' ? 'text-violet-600' : 'text-slate-400'}`} title="Ombre"><Box size={14}/></button>
+                    
+                    <div className="w-px h-4 bg-slate-200 mx-1"></div>
+                    <button onClick={() => removeBlock(block.id)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded" title="Supprimer"><Trash2 size={14}/></button>
                   </div>
 
-                  {/* Editable Content */}
-                  {block.type === 'h2' && (
-                    <div className="flex items-center gap-3">
-                      <div className="w-1.5 h-8 bg-violet-300 rounded-full"></div>
-                      <input 
-                        className="w-full text-2xl font-bold text-slate-800 border-none focus:ring-0 outline-none bg-transparent placeholder-slate-300"
-                        placeholder="Titre de section..."
-                        value={block.content || ''} 
-                        onChange={e => updateBlock(block.id, 'content', e.target.value)}
-                      />
-                    </div>
-                  )}
+                  {/* CONTENU ÉDITABLE */}
+                  <div className={`p-4 rounded-xl border-2 border-transparent group-hover:border-violet-100 group-hover:bg-slate-50/50 transition-all ${getBgClass(block.style?.backgroundColor)} ${getShadowClass(block.style?.shadow)} ${getFontClass(block.style?.fontFamily)}`}>
+                    
+                    {block.type === 'h2' && (
+                      <input className={`w-full font-bold bg-transparent border-none focus:ring-0 placeholder-slate-300 ${getSizeClass(block.style?.fontSize || 'xl')}`} placeholder="Titre..." value={block.content || ''} onChange={e => updateBlock(block.id, { content: e.target.value })} />
+                    )}
 
-                  {block.type === 'text' && (
-                     <textarea 
-                       className="w-full text-lg text-slate-600 resize-none border-none focus:ring-0 outline-none bg-transparent placeholder-slate-300 h-auto min-h-[5rem]"
-                       placeholder="Commencez à écrire votre contenu ici..."
-                       rows={3}
-                       value={block.content || ''}
-                       onChange={e => updateBlock(block.id, 'content', e.target.value)}
-                     />
-                  )}
-                  
-                  {block.type === 'callout' && (
-                    <div className="flex gap-4 p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
-                      <div className="shrink-0 pt-1">
-                         <AlertCircle className="text-slate-400" />
-                      </div>
-                      <div className="flex-1">
-                        <select 
-                          className="text-xs bg-transparent border-none text-slate-400 font-bold uppercase mb-1 focus:ring-0 p-0 cursor-pointer hover:text-violet-600"
-                          value={block.subType}
-                          onChange={e => updateBlock(block.id, 'subType', e.target.value)}
-                        >
-                          <option value="info">Type: Information</option>
-                          <option value="warn">Type: Attention</option>
-                          <option value="idea">Type: Idée</option>
-                        </select>
-                        <input 
-                          className="w-full bg-transparent border-none focus:ring-0 outline-none text-slate-700 font-medium"
-                          placeholder="Écrivez votre message important..."
-                          value={block.content || ''}
-                          onChange={e => updateBlock(block.id, 'content', e.target.value)}
-                        />
-                      </div>
-                    </div>
-                  )}
+                    {block.type === 'text' && (
+                       <div>
+                         {/* Toolbar Riche Text */}
+                         <RichTextToolbar onAction={(tag, end) => insertTag(block.id, tag, end)} />
+                         <textarea 
+                            ref={el => textRefs.current[block.id] = el}
+                            className={`w-full text-slate-600 resize-none bg-transparent border-none focus:ring-0 placeholder-slate-300 min-h-[5rem] ${getSizeClass(block.style?.fontSize)}`} 
+                            placeholder="Texte (supporte HTML)..." 
+                            rows={3} 
+                            value={block.content || ''} 
+                            onChange={e => updateBlock(block.id, { content: e.target.value })} 
+                         />
+                       </div>
+                    )}
 
-                  {/* NOUVEAU ÉDITEUR TIMELINE */}
-                  {block.type === 'timeline' && (
-                     <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
-                       <h3 className="font-bold text-slate-500 text-sm uppercase mb-4 flex items-center gap-2">
-                         <Calendar size={16}/> Chronologie
-                       </h3>
-                       
-                       <div className="space-y-4 pl-4 border-l-2 border-slate-200 ml-2">
+                    {block.type === 'equation' && (
+                      <div className="space-y-2">
+                         <div className="flex items-center justify-between mb-2">
+                           <div className="flex items-center gap-2 text-violet-600 font-medium text-sm"><Sigma size={16}/> Équation Mathématique</div>
+                         </div>
+                         <div className="bg-white border border-slate-200 rounded-lg p-2">
+                           <input 
+                             className="w-full text-sm font-mono bg-transparent border-none focus:ring-0" 
+                             placeholder="Ex: \frac{a}{b}" 
+                             value={block.content || ''} 
+                             onChange={e => updateBlock(block.id, { content: e.target.value })}
+                           />
+                         </div>
+                         <div className="text-xs text-slate-400">Prévisualisation : <span className="text-slate-800 font-serif">$$ {block.content || '...'} $$</span></div>
+                         
+                         {/* Clavier Virtuel */}
+                         <details className="mt-2">
+                           <summary className="cursor-pointer text-xs font-bold text-violet-500 hover:text-violet-700 flex items-center gap-1"><Calculator size={12}/> Ouvrir Clavier Virtuel</summary>
+                           <MathKeyboard onInsert={(sym) => updateBlock(block.id, { content: (block.content || '') + sym })} />
+                         </details>
+                      </div>
+                    )}
+
+                    {block.type === 'embed' && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 mb-2 text-violet-600 font-medium text-sm"><FileCode size={16}/> Intégration (Canva, YouTube...)</div>
+                        <input className="w-full text-sm p-2 bg-white border border-slate-200 rounded-lg" placeholder="Collez l'URL d'embed ici..." value={block.url || ''} onChange={e => updateBlock(block.id, { url: e.target.value })} />
+                        {block.url && <div className="aspect-video bg-slate-100 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400 text-xs">Prévisualisation disponible en lecture</div>}
+                      </div>
+                    )}
+
+                    {block.type === 'pdf' && (
+                       <div className="space-y-3">
+                         <div className="flex items-center gap-2 text-red-500 font-medium text-sm"><File size={16}/> Document PDF</div>
+                         <div className="flex gap-2">
+                           <input className="w-full text-sm p-2 bg-white border border-slate-200 rounded-lg" placeholder="URL du PDF..." value={block.url || ''} onChange={e => updateBlock(block.id, { url: e.target.value })} />
+                           <label className="p-2 bg-white border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50"><input type="file" hidden onChange={(e) => onUploadFile(e, block.id)} accept="application/pdf" disabled={uploading} /><UploadCloud size={16} /></label>
+                         </div>
+                         {block.url && <div className="h-24 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 text-xs">PDF prêt</div>}
+                       </div>
+                    )}
+
+                    {block.type === 'accordion' && (
+                      <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+                        <input className="w-full p-3 font-bold border-b border-slate-100" placeholder="Titre Accordéon" value={block.title || ''} onChange={e => updateBlock(block.id, { title: e.target.value })} />
+                        <textarea className="w-full p-3 text-slate-600 min-h-[4rem]" placeholder="Contenu caché..." value={block.content || ''} onChange={e => updateBlock(block.id, { content: e.target.value })} />
+                      </div>
+                    )}
+
+                    {block.type === 'flipcard' && (
+                       <div className="flex flex-col gap-2">
+                         <input className="p-2 border rounded-lg bg-white" placeholder="Question (Recto)" value={block.front || ''} onChange={e => updateBlock(block.id, { front: e.target.value })} />
+                         <input className="p-2 border rounded-lg bg-violet-50" placeholder="Réponse (Verso)" value={block.back || ''} onChange={e => updateBlock(block.id, { back: e.target.value })} />
+                       </div>
+                    )}
+
+                    {block.type === 'timeline' && (
+                       <div className="space-y-3">
                          {(block.items || []).map(item => (
-                           <div key={item.id} className="relative bg-white p-4 rounded-xl border border-slate-200 shadow-sm group/item">
-                             {/* Dot */}
-                             <div className="absolute -left-[27px] top-6 w-3 h-3 bg-white border-2 border-slate-300 rounded-full box-content group-hover/item:border-violet-500 transition-colors" />
-                             
-                             {/* Inputs */}
-                             <div className="grid grid-cols-[100px_1fr] gap-3 mb-2">
-                               <input 
-                                 className="text-xs font-bold uppercase text-violet-600 bg-violet-50 p-2 rounded border-none focus:ring-0 text-center"
-                                 placeholder="DATE"
-                                 value={item.date}
-                                 onChange={e => updateTimelineItem(block.id, item.id, 'date', e.target.value)}
-                               />
-                               <input 
-                                 className="font-bold text-slate-800 bg-transparent border-none focus:ring-0 p-2 placeholder-slate-300"
-                                 placeholder="Titre de l'événement"
-                                 value={item.title}
-                                 onChange={e => updateTimelineItem(block.id, item.id, 'title', e.target.value)}
-                               />
+                           <div key={item.id} className="flex gap-2 items-start bg-white p-3 rounded-lg border border-slate-200">
+                             <div className="grid gap-2 flex-1">
+                               <input className="text-xs font-bold uppercase text-violet-600" placeholder="DATE" value={item.date} onChange={e => updateTimelineItem(block.id, item.id, 'date', e.target.value)} />
+                               <input className="font-bold" placeholder="Titre" value={item.title} onChange={e => updateTimelineItem(block.id, item.id, 'title', e.target.value)} />
+                               <textarea className="text-sm text-slate-600 resize-none" rows={1} placeholder="Desc..." value={item.description} onChange={e => updateTimelineItem(block.id, item.id, 'description', e.target.value)} />
                              </div>
-                             <textarea 
-                               className="w-full text-sm text-slate-600 bg-transparent border-none focus:ring-0 resize-none p-2 placeholder-slate-300"
-                               placeholder="Description détaillée..."
-                               rows={2}
-                               value={item.description}
-                               onChange={e => updateTimelineItem(block.id, item.id, 'description', e.target.value)}
-                             />
-                             
-                             <button 
-                               onClick={() => removeTimelineItem(block.id, item.id)}
-                               className="absolute top-2 right-2 text-slate-300 hover:text-red-500 p-1"
-                             >
-                               <X size={14}/>
-                             </button>
+                             <button onClick={() => removeTimelineItem(block.id, item.id)} className="text-slate-300 hover:text-red-500"><X size={14}/></button>
                            </div>
                          ))}
+                         <button onClick={() => addTimelineItem(block.id)} className="text-xs font-bold text-violet-600 hover:underline">+ Ajouter Étape</button>
                        </div>
-
-                       <button 
-                         onClick={() => addTimelineItem(block.id)}
-                         className="mt-4 flex items-center gap-2 text-sm font-medium text-violet-600 hover:text-violet-700 hover:bg-violet-50 px-3 py-2 rounded-lg transition-colors"
-                       >
-                         <Plus size={16}/> Ajouter un événement
-                       </button>
-                     </div>
-                  )}
-
-                  {block.type === 'flipcard' && (
-                    <div className="flex gap-6 bg-slate-50 p-6 rounded-2xl border border-slate-200">
-                      <div className="flex-1 space-y-2">
-                        <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2"><RotateCw size={12}/> Recto (Question)</label>
-                        <textarea className="w-full p-3 bg-white border border-slate-200 rounded-xl focus:border-violet-300 focus:ring-2 focus:ring-violet-100 outline-none transition-all resize-none" rows={3} placeholder="Quelle est la capitale..." value={block.front || ''} onChange={e => updateBlock(block.id, 'front', e.target.value)} />
-                      </div>
-                      <div className="flex-1 space-y-2">
-                        <label className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2"><RotateCw size={12}/> Verso (Réponse)</label>
-                        <textarea className="w-full p-3 bg-violet-50 border border-violet-100 rounded-xl focus:border-violet-300 focus:ring-2 focus:ring-violet-100 outline-none transition-all resize-none" rows={3} placeholder="La réponse est..." value={block.back || ''} onChange={e => updateBlock(block.id, 'back', e.target.value)} />
-                      </div>
-                    </div>
-                  )}
-
-                  {block.type === 'accordion' && (
-                    <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
-                      <div className="border-b border-slate-100 bg-slate-50 p-2">
-                        <input className="w-full px-2 py-1 font-bold text-slate-800 bg-transparent border-none focus:ring-0 outline-none placeholder-slate-400" placeholder="Titre visible de l'accordéon..." value={block.title || ''} onChange={e => updateBlock(block.id, 'title', e.target.value)} />
-                      </div>
-                      <textarea className="w-full p-4 text-slate-600 bg-white border-none focus:ring-0 outline-none resize-none" placeholder="Contenu caché qui s'affichera au clic..." rows={3} value={block.content || ''} onChange={e => updateBlock(block.id, 'content', e.target.value)} />
-                    </div>
-                  )}
-
-                  {block.type === 'image' && (
-                    <div className="space-y-2">
-                      {block.url ? (
-                         <div className="relative group/img rounded-xl overflow-hidden border border-slate-100 shadow-sm">
-                           <img src={block.url} className="w-full" alt="uploaded"/>
-                           <div className="absolute inset-0 bg-black/50 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
-                              <button onClick={() => updateBlock(block.id, 'url', '')} className="bg-white text-red-500 px-4 py-2 rounded-lg font-medium shadow-lg hover:bg-red-50 transition-colors">Changer l'image</button>
-                           </div>
-                         </div>
-                      ) : (
-                        <div className="border-2 border-dashed border-slate-200 rounded-xl p-10 flex flex-col items-center justify-center gap-4 hover:border-violet-300 hover:bg-violet-50/50 transition-all bg-slate-50">
-                          {uploading ? <Loader2 className="animate-spin text-violet-500" size={32}/> : <UploadCloud className="text-slate-300" size={40}/>}
-                          <div className="text-center">
-                            <label className="text-violet-600 font-semibold cursor-pointer hover:underline">
-                              Cliquez pour uploader une image
-                              <input type="file" hidden onChange={(e) => onUploadBlockImage(e, block.id)} accept="image/*" />
-                            </label>
-                            <p className="text-slate-400 text-sm mt-1">PNG, JPG jusqu'à 5Mo</p>
+                    )}
+                    
+                    {block.type === 'callout' && (
+                       <div className="flex gap-3 bg-white p-3 rounded-lg border border-slate-200">
+                          <AlertCircle className="text-slate-400 shrink-0"/>
+                          <div className="flex-1 grid gap-2">
+                             <select className="text-xs font-bold uppercase text-slate-400" value={block.subType} onChange={e => updateBlock(block.id, { subType: e.target.value as any })}><option value="info">Info</option><option value="warn">Attention</option><option value="idea">Idée</option></select>
+                             <input className="w-full" placeholder="Votre note..." value={block.content || ''} onChange={e => updateBlock(block.id, { content: e.target.value })} />
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                       </div>
+                    )}
 
+                    {block.type === 'image' && (
+                       <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 flex flex-col items-center justify-center gap-2 bg-slate-50">
+                          {block.url ? <div className="relative w-full"><img src={block.url} className="rounded-lg w-full"/><button onClick={() => updateBlock(block.id, { url: '' })} className="absolute top-2 right-2 bg-white text-red-500 p-1 rounded shadow"><Trash2 size={14}/></button></div> : 
+                          <label className="cursor-pointer flex flex-col items-center text-slate-400 hover:text-violet-600"><UploadCloud size={24}/><span className="text-xs mt-1">Uploader Image</span><input type="file" hidden onChange={(e) => onUploadFile(e, block.id)} accept="image/*" /></label>}
+                       </div>
+                    )}
+                  </div>
                 </div>
               ))}
-
-              {blocks.length === 0 && (
-                <div className="text-center py-20 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50 flex flex-col items-center gap-4">
-                  <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm text-slate-300">
-                    <Plus size={32} />
-                  </div>
-                  <div className="text-slate-400">
-                    <p className="font-medium">Votre page est vide</p>
-                    <p className="text-sm">Ajoutez des blocs depuis la barre latérale</p>
-                  </div>
-                </div>
-              )}
+              {blocks.length === 0 && <div className="w-full text-center py-20 border-2 border-dashed border-slate-200 rounded-xl text-slate-300">Ajoutez des blocs pour commencer</div>}
             </div>
           </div>
         </div>
@@ -867,19 +858,17 @@ function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, 
 
 function ToolSection({ title, children }: any) {
   return (
-    <div className="mb-8">
-      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 px-2">{title}</h3>
-      <div className="space-y-2">{children}</div>
+    <div className="mb-6">
+      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 px-1">{title}</h3>
+      <div className="space-y-1">{children}</div>
     </div>
   );
 }
 
 function ToolButton({ icon: Icon, label, onClick }: any) {
   return (
-    <button onClick={onClick} className="w-full flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-white hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 hover:shadow-md transition-all text-slate-600 group text-left">
-      <div className="p-1.5 bg-slate-50 rounded-lg group-hover:bg-white text-slate-500 group-hover:text-violet-600 transition-colors">
-        <Icon size={18} />
-      </div>
+    <button onClick={onClick} className="w-full flex items-center gap-3 p-2.5 rounded-lg border border-transparent hover:bg-violet-50 hover:text-violet-700 transition-all text-slate-600 group text-left">
+      <Icon size={16} className="text-slate-400 group-hover:text-violet-600" />
       <span className="text-sm font-medium">{label}</span>
     </button>
   );
