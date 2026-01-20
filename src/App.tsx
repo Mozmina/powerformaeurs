@@ -13,7 +13,7 @@ import {
   List, AlertCircle, ChevronDown, RotateCw, UploadCloud, Loader2, Calendar,
   Layout, Palette, Box, Maximize, Minimize, FileCode, File, 
   Bold, Italic, Heading, Calculator, Sigma, AlignLeft, AlignCenter, AlignRight,
-  GripVertical, Users, Lock, CheckSquare, LogOut
+  GripVertical, Users, Lock, CheckSquare, LogOut, Baseline
 } from 'lucide-react';
 
 // --- STYLES CSS ---
@@ -70,13 +70,21 @@ const storage = getStorage(app);
 type BlockType = 'h2' | 'text' | 'image' | 'callout' | 'flipcard' | 'accordion' | 'timeline' | 'embed' | 'pdf' | 'equation';
 type BlockWidth = '100%' | '50%' | '33%';
 type BlockShadow = 'none' | 'sm' | 'md' | 'xl';
-type BlockColor = 'white' | 'slate' | 'blue' | 'violet' | 'amber' | 'emerald' | 'rose';
 type FontFamily = 'sans' | 'serif' | 'mono';
 type FontSize = 'sm' | 'base' | 'lg' | 'xl' | '2xl';
 type TextAlign = 'left' | 'center' | 'right';
 
 interface TimelineItem { id: string; date: string; title: string; description: string; }
-interface BlockStyle { backgroundColor?: BlockColor; shadow?: BlockShadow; fontFamily?: FontFamily; fontSize?: FontSize; textAlign?: TextAlign; isBold?: boolean; isItalic?: boolean; }
+interface BlockStyle { 
+  backgroundColor?: string; // Hex ou Preset
+  textColor?: string;       // Hex
+  shadow?: BlockShadow; 
+  fontFamily?: FontFamily; 
+  fontSize?: FontSize; 
+  textAlign?: TextAlign; 
+  isBold?: boolean; 
+  isItalic?: boolean; 
+}
 interface Block { id: string; type: BlockType; content?: string; url?: string; subType?: 'info' | 'warn' | 'idea'; front?: string; back?: string; title?: string; items?: TimelineItem[]; width?: BlockWidth; style?: BlockStyle; }
 
 interface Group { id: string; name: string; }
@@ -87,7 +95,24 @@ interface FolderData { id: string; title: string; parentId: string | null; creat
 // --- HELPER CLASSES ---
 const getWidthClass = (w?: BlockWidth) => w === '50%' ? 'w-full md:w-1/2' : w === '33%' ? 'w-full md:w-1/3' : 'w-full';
 const getShadowClass = (s?: BlockShadow) => s === 'sm' ? 'shadow-sm' : s === 'md' ? 'shadow-md' : s === 'xl' ? 'shadow-xl shadow-slate-200' : 'shadow-none';
-const getBgClass = (c?: BlockColor) => c === 'slate' ? 'bg-slate-50 border-slate-200' : c === 'blue' ? 'bg-blue-50 border-blue-200' : c === 'violet' ? 'bg-violet-50 border-violet-200' : c === 'amber' ? 'bg-amber-50 border-amber-200' : c === 'emerald' ? 'bg-emerald-50 border-emerald-200' : c === 'rose' ? 'bg-rose-50 border-rose-200' : 'bg-white border-transparent';
+
+// Modifié pour retourner une classe vide si c'est une couleur custom (hex)
+const getBgClass = (c?: string) => {
+  switch(c) {
+    case 'slate': return 'bg-slate-50 border-slate-200';
+    case 'blue': return 'bg-blue-50 border-blue-200';
+    case 'violet': return 'bg-violet-50 border-violet-200';
+    case 'amber': return 'bg-amber-50 border-amber-200';
+    case 'emerald': return 'bg-emerald-50 border-emerald-200';
+    case 'rose': return 'bg-rose-50 border-rose-200';
+    case 'white': return 'bg-white border-slate-100'; // Correction ici: border visible pour le blanc
+    default: 
+      // Si c'est un code hex (commence par #) ou autre, on ne retourne pas de classe bg Tailwind
+      if (c && c.startsWith('#')) return 'border-transparent';
+      return 'bg-white border-slate-100';
+  }
+};
+
 const getFontClass = (f?: FontFamily) => f === 'serif' ? 'font-serif' : f === 'mono' ? 'font-mono' : 'font-sans';
 const getSizeClass = (s?: FontSize) => s === 'sm' ? 'text-sm' : s === 'lg' ? 'text-lg' : s === 'xl' ? 'text-xl' : s === '2xl' ? 'text-2xl' : 'text-base';
 const getAlignClass = (a?: TextAlign) => a === 'center' ? 'text-center' : a === 'right' ? 'text-right' : 'text-left';
@@ -225,20 +250,28 @@ export default function App() {
 function BlockRenderer({ block }: { block: Block }) {
   const [flipped, setFlipped] = useState(false);
   const [open, setOpen] = useState(false);
-  const bgClass = getBgClass(block.style?.backgroundColor);
+  
+  // Application du style personnalisé
+  // Si c'est un hex code, on l'applique en inline style
+  // Si c'est un preset, on utilise getBgClass
+  const isHexBg = block.style?.backgroundColor?.startsWith('#');
+  const bgClass = isHexBg ? 'border-transparent' : getBgClass(block.style?.backgroundColor);
+  const bgStyle = isHexBg ? { backgroundColor: block.style?.backgroundColor } : {};
+  
+  const textStyle = block.style?.textColor ? { color: block.style.textColor } : {};
+
   const shadowClass = getShadowClass(block.style?.shadow);
   const fontClass = getFontClass(block.style?.fontFamily);
   const sizeClass = getSizeClass(block.style?.fontSize);
   const alignClass = getAlignClass(block.style?.textAlign);
-  const borderClass = block.style?.backgroundColor && block.style.backgroundColor !== 'white' ? 'border-transparent' : 'border-slate-100';
-  const containerClasses = `h-full rounded-2xl p-6 border ${bgClass} ${borderClass} ${shadowClass} ${fontClass} ${sizeClass} ${alignClass} transition-all duration-300 overflow-hidden`;
+  const containerClasses = `h-full rounded-2xl p-6 border ${bgClass} ${shadowClass} ${fontClass} ${sizeClass} ${alignClass} transition-all duration-300 overflow-hidden`;
   
   const renderContent = () => {
     switch (block.type) {
-      case 'h2': return <h2 className={`text-2xl font-bold text-slate-800 pb-2 border-b border-slate-200/50 flex items-center gap-3 ${alignClass === 'text-center' ? 'justify-center' : alignClass === 'text-right' ? 'justify-end' : ''}`}><span className="w-2 h-8 bg-violet-500 rounded-full"></span>{block.content}</h2>;
-      case 'text': return <div className="leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: block.content || '' }} />;
+      case 'h2': return <h2 className={`text-2xl font-bold text-slate-800 pb-2 border-b border-slate-200/50 flex items-center gap-3 ${alignClass === 'text-center' ? 'justify-center' : alignClass === 'text-right' ? 'justify-end' : ''}`} style={textStyle}><span className="w-2 h-8 bg-violet-500 rounded-full"></span>{block.content}</h2>;
+      case 'text': return <div className="leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: block.content || '' }} style={textStyle} />;
       case 'equation': return <div className="flex flex-col items-center justify-center p-4 bg-slate-50/50 rounded-lg"><div className="text-lg">{`$$ ${block.content || ''} $$`}</div></div>;
-      case 'callout': return <div className={`p-4 rounded-xl border flex gap-4 text-left ${block.subType === 'warn' ? 'bg-amber-50 border-amber-200 text-amber-900' : block.subType === 'idea' ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-blue-50 border-blue-200 text-blue-900'}`}><AlertCircle className="shrink-0 mt-1 opacity-70" /><div className="font-medium" dangerouslySetInnerHTML={{ __html: block.content || '' }} /></div>;
+      case 'callout': return <div className={`p-4 rounded-xl border flex gap-4 text-left ${block.subType === 'warn' ? 'bg-amber-50 border-amber-200 text-amber-900' : block.subType === 'idea' ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-blue-50 border-blue-200 text-blue-900'}`} style={textStyle}><AlertCircle className="shrink-0 mt-1 opacity-70" /><div className="font-medium" dangerouslySetInnerHTML={{ __html: block.content || '' }} /></div>;
       case 'flipcard': return <div className="h-64 w-full perspective-1000 cursor-pointer group" onClick={() => setFlipped(!flipped)}><div className={`relative w-full h-full duration-500 transform-style-3d transition-transform ${flipped ? 'rotate-y-180' : ''}`}><div className="absolute inset-0 backface-hidden bg-white border-2 border-violet-100 rounded-2xl flex items-center justify-center p-8 text-center shadow-sm group-hover:shadow-lg"><span className="text-xl font-semibold text-slate-700">{block.front}</span><span className="absolute bottom-4 text-xs text-slate-400 font-semibold uppercase tracking-widest">Retourner</span></div><div className="absolute inset-0 backface-hidden bg-violet-600 rounded-2xl rotate-y-180 flex items-center justify-center p-8 text-center shadow-xl text-white"><span className="text-xl font-medium">{block.back}</span></div></div></div>;
       case 'accordion': return <div className="border border-slate-200 rounded-xl overflow-hidden bg-white/60 shadow-sm hover:shadow-md transition-shadow text-left"><button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 transition-colors text-left font-semibold text-slate-800">{block.title}<ChevronDown className={`transform transition-transform duration-300 text-slate-400 ${open ? 'rotate-180' : ''}`} /></button><div className={`grid accordion-content ${open ? 'accordion-open' : 'accordion-closed'}`}><div className="accordion-inner p-4 border-t border-slate-100 text-slate-600 leading-relaxed bg-slate-50/50"><div dangerouslySetInnerHTML={{ __html: block.content || '' }} /></div></div></div>;
       case 'timeline': return <div className="space-y-6 relative py-2 text-left"><div className="absolute left-[7px] top-4 bottom-4 w-0.5 bg-slate-200"></div>{(block.items || []).map((item) => (<div key={item.id} className="relative pl-8 group"><div className="absolute left-0 top-1.5 w-4 h-4 bg-white border-2 border-slate-300 rounded-full group-hover:border-violet-500 group-hover:scale-125 transition-all shadow-sm z-10" /><div><span className="inline-block text-xs font-bold uppercase text-violet-600 bg-violet-50 px-2 py-0.5 rounded border border-violet-100 mb-1">{item.date}</span><h4 className="font-bold text-slate-800">{item.title}</h4><div className="text-slate-600 text-sm leading-relaxed mt-1">{item.description}</div></div></div>))}</div>;
@@ -248,7 +281,7 @@ function BlockRenderer({ block }: { block: Block }) {
       default: return null;
     }
   };
-  return <div className={containerClasses}>{renderContent()}</div>;
+  return <div className={containerClasses} style={{ ...bgStyle }}>{renderContent()}</div>;
 }
 
 function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, onSave, storage }: any) {
@@ -309,19 +342,17 @@ function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, 
             <div className="flex flex-wrap -mx-3 items-start">
               {blocks.map((block: Block, index: number) => (
                 <div key={block.id} className={`${getWidthClass(block.width)} px-3 mb-6 relative group transition-all duration-300 ${draggedBlockIndex === index ? 'dragging' : ''}`}
-                  // Le div parent n'est plus draggable directement
                   onDragOver={(e)=>handleDragOver(e, index)} onDragLeave={handleDragLeave} onDrop={(e)=>handleDrop(e, index)}
                 >
                   <div className="absolute top-2 right-5 z-20 flex items-center gap-1 bg-white shadow-xl border rounded-xl p-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex-wrap max-w-[320px] justify-end">
-                    {/* Seule la poignée est draggable */}
-                    <div 
-                      className="p-1.5 text-slate-300 cursor-grab border-r mr-1 active:cursor-grabbing"
-                      draggable="true"
-                      onDragStart={(e) => { e.stopPropagation(); handleDragStart(index); }}
-                    >
-                      <GripVertical size={16}/>
+                    <div className="p-1.5 text-slate-300 cursor-grab border-r mr-1 active:cursor-grabbing" draggable="true" onDragStart={(e) => { e.stopPropagation(); handleDragStart(index); }}><GripVertical size={16}/></div>
+                    {(block.type==='text'||block.type==='callout') && <><button onClick={()=>applyFormat('bold')} className="p-1.5 rounded hover:bg-slate-100"><Bold size={14}/></button><button onClick={()=>applyFormat('italic')} className="p-1.5 rounded hover:bg-slate-100"><Italic size={14}/></button>
+                    {/* TEXT COLOR PICKER */}
+                    <div className="relative group/color p-1.5 cursor-pointer rounded hover:bg-slate-100">
+                      <Baseline size={14}/>
+                      <input type="color" className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" onChange={(e) => updateBlockStyle(block.id, { textColor: e.target.value })} title="Couleur Texte"/>
                     </div>
-                    {(block.type==='text'||block.type==='callout') && <><button onClick={()=>applyFormat('bold')} className="p-1.5 rounded hover:bg-slate-100"><Bold size={14}/></button><button onClick={()=>applyFormat('italic')} className="p-1.5 rounded hover:bg-slate-100"><Italic size={14}/></button><div className="w-px h-4 bg-slate-200 mx-1"></div></>}
+                    <div className="w-px h-4 bg-slate-200 mx-1"></div></>}
                     <button onClick={()=>updateBlockStyle(block.id, {textAlign:'left'})} className="p-1.5 rounded hover:bg-slate-100"><AlignLeft size={14}/></button>
                     <button onClick={()=>updateBlockStyle(block.id, {textAlign:'center'})} className="p-1.5 rounded hover:bg-slate-100"><AlignCenter size={14}/></button>
                     <button onClick={()=>updateBlockStyle(block.id, {textAlign:'right'})} className="p-1.5 rounded hover:bg-slate-100"><AlignRight size={14}/></button>
@@ -330,22 +361,29 @@ function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, 
                     <button onClick={()=>updateBlock(block.id, {width:'50%'})} className="p-1.5 rounded hover:bg-slate-100"><Layout size={14}/></button>
                     <button onClick={()=>updateBlock(block.id, {width:'33%'})} className="p-1.5 rounded hover:bg-slate-100"><Minimize size={14}/></button>
                     <div className="w-px h-4 bg-slate-200 mx-1"></div>
-                    {['white','blue','violet','amber','emerald'].map(c=><button key={c} onClick={()=>updateBlockStyle(block.id, {backgroundColor:c as BlockColor})} className={`w-3 h-3 rounded-full border ${getBgClass(c as BlockColor)}`}></button>)}
+                    {['white','blue','violet','amber','emerald'].map(c=><button key={c} onClick={()=>updateBlockStyle(block.id, {backgroundColor:c})} className={`w-3 h-3 rounded-full border ${getBgClass(c)}`}></button>)}
+                    {/* BACKGROUND COLOR PICKER */}
+                    <div className="relative group/bg ml-1 cursor-pointer">
+                      <div className="w-4 h-4 rounded-full border border-slate-300 bg-gradient-to-tr from-pink-300 to-blue-300 hover:scale-110 transition-transform"></div>
+                      <input type="color" className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" onChange={(e) => updateBlockStyle(block.id, { backgroundColor: e.target.value })} title="Couleur Fond Perso"/>
+                    </div>
                     <button onClick={()=>removeBlock(block.id)} className="p-1.5 text-red-400 hover:bg-red-50 rounded ml-1"><Trash2 size={14}/></button>
                   </div>
                   
-                  {/* Feedback visuel de la poignée au survol du bloc */}
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 -ml-8 p-2 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <GripVertical size={20} />
-                  </div>
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 -ml-8 p-2 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"><GripVertical size={20} /></div>
 
-                  <div className={`p-4 rounded-xl border-2 group-hover:border-violet-300 transition-all ${getBgClass(block.style?.backgroundColor)} ${getShadowClass(block.style?.shadow)} ${getAlignClass(block.style?.textAlign)}`}>
-                    {block.type==='h2' && <input className={`w-full font-bold bg-transparent border-none focus:ring-0 ${getAlignClass(block.style?.textAlign)}`} value={block.content||''} onChange={e=>updateBlock(block.id, {content:e.target.value})} placeholder="Titre..."/>}
+                  {/* APPLICATION DES STYLES CUSTOM (HEX) EN INLINE */}
+                  <div className={`p-4 rounded-xl border-2 group-hover:border-violet-300 transition-all ${!block.style?.backgroundColor?.startsWith('#') ? getBgClass(block.style?.backgroundColor) : 'border-transparent'} ${getShadowClass(block.style?.shadow)} ${getAlignClass(block.style?.textAlign)}`}
+                       style={{ 
+                         backgroundColor: block.style?.backgroundColor?.startsWith('#') ? block.style.backgroundColor : undefined,
+                         color: block.style?.textColor 
+                       }}>
+                    {block.type==='h2' && <input className={`w-full font-bold bg-transparent border-none focus:ring-0 ${getAlignClass(block.style?.textAlign)}`} value={block.content||''} onChange={e=>updateBlock(block.id, {content:e.target.value})} placeholder="Titre..." style={{ color: block.style?.textColor }}/>}
                     {block.type==='text' && <EditableText html={block.content||''} tagName="div" className="min-h-[5rem] outline-none" onChange={(val:string)=>updateBlock(block.id, {content:val})} placeholder="Texte..."/>}
                     {block.type==='callout' && <div className="flex gap-2"><AlertCircle className="shrink-0 text-slate-400"/><div className="flex-1"><select className="text-xs font-bold uppercase text-slate-400 mb-1" value={block.subType} onChange={e=>updateBlock(block.id, {subType:e.target.value as any})}><option value="info">Info</option><option value="warn">Warn</option><option value="idea">Idea</option></select><EditableText html={block.content||''} tagName="div" className="outline-none" onChange={(val:string)=>updateBlock(block.id, {content:val})} placeholder="Note..."/></div></div>}
                     {block.type==='timeline' && <div className="space-y-2">{(block.items||[]).map(i=><div key={i.id} className="flex gap-2 border p-2 rounded bg-white"><input className="w-20 font-bold text-violet-600 text-xs" value={i.date} onChange={e=>updateTimelineItem(block.id,i.id,'date',e.target.value)}/><div className="flex-1"><input className="w-full font-bold text-sm" value={i.title} onChange={e=>updateTimelineItem(block.id,i.id,'title',e.target.value)}/><textarea className="w-full text-xs resize-none" rows={1} value={i.description} onChange={e=>updateTimelineItem(block.id,i.id,'description',e.target.value)}/></div><button onClick={()=>removeTimelineItem(block.id,i.id)} className="text-slate-300 hover:text-red-500"><X size={14}/></button></div>)}<button onClick={()=>addTimelineItem(block.id)} className="text-xs text-violet-600 font-bold">+ Etape</button></div>}
                     {block.type==='image' && <div className="border-2 border-dashed p-4 text-center rounded-xl">{block.url ? <div className="relative"><img src={block.url} className="rounded w-full"/><button onClick={()=>updateBlock(block.id,{url:''})} className="absolute top-2 right-2 bg-white text-red-500 p-1 rounded shadow"><Trash2 size={14}/></button></div> : <label className="cursor-pointer text-slate-400 hover:text-violet-600"><UploadCloud size={24} className="mx-auto"/><span className="text-xs">Image</span><input type="file" hidden onChange={async e=>{if(e.target.files?.[0]){const u = await onUpload(e.target.files[0]); if(u) updateBlock(block.id,{url:u});}}} /></label>}</div>}
-                    {['embed','pdf','flipcard','accordion','equation'].includes(block.type) && <div className="text-center text-slate-400 text-xs italic py-4 border rounded bg-slate-50">Éditeur simplifié pour {block.type} (utilisez les champs inputs comme avant)</div>}
+                    {['embed','pdf','flipcard','accordion','equation'].includes(block.type) && <div className="text-center text-slate-400 text-xs italic py-4 border rounded bg-slate-50">Éditeur simplifié pour {block.type}</div>}
                   </div>
                 </div>
               ))}
