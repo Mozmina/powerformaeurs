@@ -29,7 +29,7 @@ const customStyles = `
 const apiKey = ""; 
 
 const firebaseConfig = {
-  apiKey: apiKey, 
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY, 
   authDomain: "cartesmentalesrt.firebaseapp.com",
   projectId: "cartesmentalesrt",
   storageBucket: "cartesmentalesrt.firebasestorage.app",
