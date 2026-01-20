@@ -39,14 +39,19 @@ const customStyles = `
     cursor: text;
   }
 
+  /* Drag & Drop Styles */
   .drag-over {
-    border-top: 3px solid #7c3aed !important;
+    border-top: 3px solid #7c3aed !important; /* Violet-600 */
     transition: border 0.1s ease;
   }
   .dragging {
     opacity: 0.5;
     background-color: #f3f4f6;
   }
+  
+  /* Cursor styles */
+  .cursor-grab { cursor: grab; }
+  .cursor-grabbing { cursor: grabbing; }
 `;
 
 // --- CONFIGURATION FIREBASE ---
@@ -96,7 +101,6 @@ interface FolderData { id: string; title: string; parentId: string | null; creat
 const getWidthClass = (w?: BlockWidth) => w === '50%' ? 'w-full md:w-1/2' : w === '33%' ? 'w-full md:w-1/3' : 'w-full';
 const getShadowClass = (s?: BlockShadow) => s === 'sm' ? 'shadow-sm' : s === 'md' ? 'shadow-md' : s === 'xl' ? 'shadow-xl shadow-slate-200' : 'shadow-none';
 
-// Modifié pour retourner une classe vide si c'est une couleur custom (hex)
 const getBgClass = (c?: string) => {
   switch(c) {
     case 'slate': return 'bg-slate-50 border-slate-200';
@@ -105,9 +109,8 @@ const getBgClass = (c?: string) => {
     case 'amber': return 'bg-amber-50 border-amber-200';
     case 'emerald': return 'bg-emerald-50 border-emerald-200';
     case 'rose': return 'bg-rose-50 border-rose-200';
-    case 'white': return 'bg-white border-slate-100'; // Correction ici: border visible pour le blanc
+    case 'white': return 'bg-white border-slate-100'; 
     default: 
-      // Si c'est un code hex (commence par #) ou autre, on ne retourne pas de classe bg Tailwind
       if (c && c.startsWith('#')) return 'border-transparent';
       return 'bg-white border-slate-100';
   }
@@ -120,18 +123,29 @@ const getAlignClass = (a?: TextAlign) => a === 'center' ? 'text-center' : a === 
 const EditableText = ({ html, tagName, className, onChange, placeholder }: any) => {
   const contentEditableRef = useRef<HTMLElement>(null);
   const lastHtml = useRef(html);
+  
   React.useLayoutEffect(() => {
     if (contentEditableRef.current && contentEditableRef.current.innerHTML !== html && document.activeElement !== contentEditableRef.current) {
       contentEditableRef.current.innerHTML = html;
     }
     lastHtml.current = html;
   }, [html]);
+
   const handleInput = (e: React.FormEvent<HTMLElement>) => {
     const newHtml = e.currentTarget.innerHTML;
     if (newHtml !== lastHtml.current) { onChange(newHtml); }
     lastHtml.current = newHtml;
   };
-  return React.createElement(tagName, { className, contentEditable: true, suppressContentEditableWarning: true, onInput: handleInput, onBlur: handleInput, placeholder, ref: contentEditableRef });
+
+  return React.createElement(tagName, { 
+    className, 
+    contentEditable: true, 
+    suppressContentEditableWarning: true, 
+    onInput: handleInput, 
+    onBlur: handleInput, 
+    placeholder, 
+    ref: contentEditableRef 
+  });
 };
 
 // --- COMPOSANT PRINCIPAL ---
@@ -250,21 +264,16 @@ export default function App() {
 function BlockRenderer({ block }: { block: Block }) {
   const [flipped, setFlipped] = useState(false);
   const [open, setOpen] = useState(false);
-  
-  // Application du style personnalisé
-  // Si c'est un hex code, on l'applique en inline style
-  // Si c'est un preset, on utilise getBgClass
-  const isHexBg = block.style?.backgroundColor?.startsWith('#');
-  const bgClass = isHexBg ? 'border-transparent' : getBgClass(block.style?.backgroundColor);
+  const bgClass = getBgClass(block.style?.backgroundColor);
+  const isHexBg = block.style?.backgroundColor && block.style.backgroundColor.startsWith('#');
   const bgStyle = isHexBg ? { backgroundColor: block.style?.backgroundColor } : {};
-  
-  const textStyle = block.style?.textColor ? { color: block.style.textColor } : {};
-
   const shadowClass = getShadowClass(block.style?.shadow);
   const fontClass = getFontClass(block.style?.fontFamily);
   const sizeClass = getSizeClass(block.style?.fontSize);
   const alignClass = getAlignClass(block.style?.textAlign);
-  const containerClasses = `h-full rounded-2xl p-6 border ${bgClass} ${shadowClass} ${fontClass} ${sizeClass} ${alignClass} transition-all duration-300 overflow-hidden`;
+  const borderClass = (block.style?.backgroundColor && block.style.backgroundColor !== 'white') || isHexBg ? 'border-transparent' : 'border-slate-100';
+  const textStyle = block.style?.textColor ? { color: block.style.textColor } : {};
+  const containerClasses = `h-full rounded-2xl p-6 border ${bgClass} ${borderClass} ${shadowClass} ${fontClass} ${sizeClass} ${alignClass} transition-all duration-300 overflow-hidden`;
   
   const renderContent = () => {
     switch (block.type) {
@@ -281,7 +290,7 @@ function BlockRenderer({ block }: { block: Block }) {
       default: return null;
     }
   };
-  return <div className={containerClasses} style={{ ...bgStyle }}>{renderContent()}</div>;
+  return <div className={containerClasses} style={bgStyle}>{renderContent()}</div>;
 }
 
 function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, onSave, storage }: any) {
@@ -298,9 +307,24 @@ function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, 
   const updateBlockStyle = (id: string, styleUpdates: Partial<BlockStyle>) => setBlocks(blocks.map((b: Block) => b.id === id ? { ...b, style: { ...b.style, ...styleUpdates } } : b));
   const removeBlock = (id: string) => setBlocks(blocks.filter((b: Block) => b.id !== id));
 
-  // DnD logic
-  const handleDragStart = (index: number) => setDraggedBlockIndex(index);
-  const handleDragOver = (e: React.DragEvent, index: number) => { e.preventDefault(); (e.currentTarget as HTMLElement).classList.add('drag-over'); };
+  // DnD logic - Modifiée pour n'autoriser le drag que si c'est la poignée qui est cliquée
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    // Vérifier si l'élément cible est bien le grip handle
+    const target = e.target as HTMLElement;
+    // Si on drag la poignée elle-même ou un de ses enfants
+    if (target.dataset.dragHandle) {
+      setDraggedBlockIndex(index);
+      e.dataTransfer.effectAllowed = 'move';
+    } else {
+      e.preventDefault();
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => { 
+    if (draggedBlockIndex === null) return;
+    e.preventDefault(); 
+    (e.currentTarget as HTMLElement).classList.add('drag-over'); 
+  };
   const handleDragLeave = (e: React.DragEvent) => (e.currentTarget as HTMLElement).classList.remove('drag-over');
   const handleDrop = (e: React.DragEvent, index: number) => {
     e.preventDefault();
@@ -342,10 +366,13 @@ function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, 
             <div className="flex flex-wrap -mx-3 items-start">
               {blocks.map((block: Block, index: number) => (
                 <div key={block.id} className={`${getWidthClass(block.width)} px-3 mb-6 relative group transition-all duration-300 ${draggedBlockIndex === index ? 'dragging' : ''}`}
+                  draggable={true} // Permet l'événement onDragStart
+                  onDragStart={(e) => handleDragStart(e, index)}
                   onDragOver={(e)=>handleDragOver(e, index)} onDragLeave={handleDragLeave} onDrop={(e)=>handleDrop(e, index)}
                 >
                   <div className="absolute top-2 right-5 z-20 flex items-center gap-1 bg-white shadow-xl border rounded-xl p-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex-wrap max-w-[320px] justify-end">
-                    <div className="p-1.5 text-slate-300 cursor-grab border-r mr-1 active:cursor-grabbing" draggable="true" onDragStart={(e) => { e.stopPropagation(); handleDragStart(index); }}><GripVertical size={16}/></div>
+                    {/* Poignée dédiée avec dataset */}
+                    <div className="p-1.5 text-slate-300 cursor-grab border-r mr-1 active:cursor-grabbing" data-drag-handle="true"><GripVertical size={16} style={{pointerEvents: 'none'}} /></div>
                     {(block.type==='text'||block.type==='callout') && <><button onClick={()=>applyFormat('bold')} className="p-1.5 rounded hover:bg-slate-100"><Bold size={14}/></button><button onClick={()=>applyFormat('italic')} className="p-1.5 rounded hover:bg-slate-100"><Italic size={14}/></button>
                     {/* TEXT COLOR PICKER */}
                     <div className="relative group/color p-1.5 cursor-pointer rounded hover:bg-slate-100">
