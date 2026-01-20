@@ -15,7 +15,8 @@ import {
 
 // --- CONFIGURATION FIREBASE ---
 const firebaseConfig = {
-  apiKey: "AIzaSyCifL5Vt1kyGx7eeNHfJsELaZTChxkPIQQ",
+  // Use the environment variable. If it's missing (e.g. during build scan), fallback to empty string
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "", 
   authDomain: "cartesmentalesrt.firebaseapp.com",
   projectId: "cartesmentalesrt",
   storageBucket: "cartesmentalesrt.firebasestorage.app",
