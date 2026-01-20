@@ -13,7 +13,7 @@ import {
   List, AlertCircle, ChevronDown, RotateCw, UploadCloud, Loader2, Calendar,
   Layout, Palette, Box, Maximize, Minimize, FileCode, File, 
   Bold, Italic, Heading, Calculator, Sigma, AlignLeft, AlignCenter, AlignRight,
-  GripVertical, Users, Lock, CheckSquare, LogOut, Baseline
+  GripVertical, Users, Lock, CheckSquare, LogOut, Baseline, ArrowLeft
 } from 'lucide-react';
 
 // --- STYLES CSS ---
@@ -39,14 +39,17 @@ const customStyles = `
     cursor: text;
   }
 
-  /* Drag & Drop Styles */
-  .drag-over {
-    border-top: 3px solid #7c3aed !important; /* Violet-600 */
-    transition: border 0.1s ease;
+  /* Drag & Drop Styles Simples */
+  .draggable-item {
+    transition: transform 0.2s ease, opacity 0.2s ease;
   }
-  .dragging {
-    opacity: 0.5;
-    background-color: #f3f4f6;
+  .draggable-item.dragging {
+    opacity: 0.4;
+    transform: scale(0.98);
+    border: 2px dashed #7c3aed;
+  }
+  .draggable-item.drag-over {
+    border-top: 3px solid #7c3aed;
   }
   
   /* Cursor styles */
@@ -81,8 +84,8 @@ type TextAlign = 'left' | 'center' | 'right';
 
 interface TimelineItem { id: string; date: string; title: string; description: string; }
 interface BlockStyle { 
-  backgroundColor?: string; // Hex ou Preset
-  textColor?: string;       // Hex
+  backgroundColor?: string; 
+  textColor?: string;       
   shadow?: BlockShadow; 
   fontFamily?: FontFamily; 
   fontSize?: FontSize; 
@@ -235,16 +238,21 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col">
       <style>{customStyles}</style>
-      <header className="bg-white border-b border-slate-200 h-16 px-6 flex items-center justify-between sticky top-0 z-50">
-        <div className="flex items-center gap-3 cursor-pointer" onClick={() => { setView('folders'); setCurrentFolder(null); }}><div className="bg-violet-600 text-white p-2 rounded-lg"><RotateCw size={20} /></div><span className="font-bold text-xl text-violet-900 tracking-tight hidden sm:block">LearnFlow</span></div>
-        <div className="flex items-center gap-2 text-sm text-slate-500 overflow-x-auto no-scrollbar max-w-[50vw]">
-          <button onClick={() => { setView('folders'); setCurrentFolder(null); }} className="hover:text-violet-600 flex items-center gap-1 px-2 py-1 rounded-md hover:bg-slate-50 whitespace-nowrap"><Home size={14} /> Accueil</button>
-          {currentFolder && <><ChevronRight size={14} className="text-slate-300 shrink-0" />{currentFolder.parentId && <span className="text-slate-400">...</span>}{currentFolder.parentId && <ChevronRight size={14} className="text-slate-300 shrink-0" />}<span className="font-semibold text-violet-600 bg-violet-50 px-2 py-1 rounded border border-violet-100 whitespace-nowrap">{currentFolder.title}</span></>}
-        </div>
-        <div className="flex items-center gap-2">{isAdmin ? <><button onClick={() => setView('admin_assign')} className={`p-2 rounded-lg text-sm font-medium ${view === 'admin_assign' ? 'bg-violet-100 text-violet-700' : 'text-slate-500 hover:bg-slate-100'}`}>Attributions</button><button onClick={() => setView('admin_groups')} className={`p-2 rounded-lg text-sm font-medium ${view === 'admin_groups' ? 'bg-violet-100 text-violet-700' : 'text-slate-500 hover:bg-slate-100'}`}>Groupes</button><button onClick={() => setIsAdmin(false)} className="p-2 text-slate-400 hover:text-red-500" title="Quitter Admin"><LogOut size={18}/></button></> : <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-full"><Users size={14} className="text-slate-400"/><span className="text-xs font-bold text-slate-600">{selectedGroup?.name}</span><button onClick={() => setSelectedGroup(null)} className="ml-2 text-slate-400 hover:text-red-500"><X size={12}/></button></div>}</div>
-      </header>
+      
+      {/* HEADER - Caché en mode viewer */}
+      {view !== 'viewer' && (
+        <header className="bg-white border-b border-slate-200 h-16 px-6 flex items-center justify-between sticky top-0 z-50">
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => { setView('folders'); setCurrentFolder(null); }}><div className="bg-violet-600 text-white p-2 rounded-lg"><RotateCw size={20} /></div><span className="font-bold text-xl text-violet-900 tracking-tight hidden sm:block">LearnFlow</span></div>
+          <div className="flex items-center gap-2 text-sm text-slate-500 overflow-x-auto no-scrollbar max-w-[50vw]">
+            <button onClick={() => { setView('folders'); setCurrentFolder(null); }} className="hover:text-violet-600 flex items-center gap-1 px-2 py-1 rounded-md hover:bg-slate-50 whitespace-nowrap"><Home size={14} /> Accueil</button>
+            {currentFolder && <><ChevronRight size={14} className="text-slate-300 shrink-0" />{currentFolder.parentId && <span className="text-slate-400">...</span>}{currentFolder.parentId && <ChevronRight size={14} className="text-slate-300 shrink-0" />}<span className="font-semibold text-violet-600 bg-violet-50 px-2 py-1 rounded border border-violet-100 whitespace-nowrap">{currentFolder.title}</span></>}
+          </div>
+          <div className="flex items-center gap-2">{isAdmin ? <><button onClick={() => setView('admin_assign')} className={`p-2 rounded-lg text-sm font-medium ${view === 'admin_assign' ? 'bg-violet-100 text-violet-700' : 'text-slate-500 hover:bg-slate-100'}`}>Attributions</button><button onClick={() => setView('admin_groups')} className={`p-2 rounded-lg text-sm font-medium ${view === 'admin_groups' ? 'bg-violet-100 text-violet-700' : 'text-slate-500 hover:bg-slate-100'}`}>Groupes</button><button onClick={() => setIsAdmin(false)} className="p-2 text-slate-400 hover:text-red-500" title="Quitter Admin"><LogOut size={18}/></button></> : <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-full"><Users size={14} className="text-slate-400"/><span className="text-xs font-bold text-slate-600">{selectedGroup?.name}</span><button onClick={() => setSelectedGroup(null)} className="ml-2 text-slate-400 hover:text-red-500"><X size={12}/></button></div>}</div>
+        </header>
+      )}
 
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-8 overflow-y-auto">
+      {/* MODIFICATION ICI : Passage de max-w-7xl à max-w-[1920px] ou w-full avec une limite plus large pour écran 1080p */}
+      <main className="flex-1 w-full max-w-[1600px] mx-auto p-4 sm:p-8 overflow-y-auto">
         {(view === 'folders' || view === 'pages') && (
           <div className="space-y-8">
             {isAdmin && <div className="flex justify-end gap-3"><button onClick={handleCreateFolder} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium hover:border-violet-300 hover:text-violet-600 transition-colors"><Folder size={16} /> Nouveau Dossier</button><button onClick={() => { setEditorBlocks([]); setEditorTitle(""); setEditorCover(""); setView('editor'); }} className="flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-lg text-sm font-medium hover:bg-violet-700 shadow-lg shadow-violet-200 transition-colors"><Plus size={16} /> Nouvelle Page</button></div>}
@@ -254,13 +262,51 @@ export default function App() {
         )}
         {isAdmin && view === 'admin_groups' && (<div className="max-w-2xl mx-auto bg-white rounded-2xl border border-slate-200 p-8 shadow-sm"><h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><Users className="text-violet-600"/> Gestion des Groupes</h2><div className="flex gap-2 mb-8"><button onClick={handleCreateGroup} className="flex-1 py-3 border-2 border-dashed border-slate-300 rounded-xl text-slate-500 hover:border-violet-500 hover:text-violet-600 hover:bg-violet-50 font-medium transition-all flex items-center justify-center gap-2"><Plus size={20}/> Créer un groupe</button></div><div className="space-y-2">{groups.map(g => (<div key={g.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100"><span className="font-semibold text-slate-700">{g.name}</span><button onClick={() => handleDelete(g.id, 'groups')} className="text-slate-400 hover:text-red-500 p-2"><Trash2 size={16}/></button></div>))}</div></div>)}
         {isAdmin && view === 'admin_assign' && (<div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"><div className="p-6 border-b border-slate-100 bg-slate-50/50"><h2 className="text-xl font-bold flex items-center gap-2"><CheckSquare className="text-violet-600"/> Attribution des Cartes Mentales</h2><p className="text-sm text-slate-500 mt-1">Cochez les cases pour rendre une carte visible à un groupe. Le chemin d'accès (dossiers) s'affichera automatiquement.</p></div><div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200"><tr><th className="px-6 py-4 font-bold">Carte Mentale / Page</th>{groups.map(g => (<th key={g.id} className="px-6 py-4 text-center font-bold text-violet-700 bg-violet-50/30 border-l border-slate-200 min-w-[100px]">{g.name}</th>))}</tr></thead><tbody className="divide-y divide-slate-100">{allPages.map(page => (<tr key={page.id} className="hover:bg-slate-50/50"><td className="px-6 py-4 font-medium text-slate-800">{page.title}<div className="text-[10px] text-slate-400 font-normal mt-0.5">{allFolders.find(f => f.id === page.folderId)?.title || "Racine"}</div></td>{groups.map(g => { const isAssigned = assignments.some(a => a.groupId === g.id && a.pageId === page.id); return (<td key={g.id} className="px-6 py-4 text-center border-l border-slate-100"><input type="checkbox" checked={isAssigned} onChange={(e) => handleToggleAssignment(g.id, page.id, isAssigned)} className="w-5 h-5 rounded border-slate-300 text-violet-600 focus:ring-violet-500 cursor-pointer" /></td>); })}</tr>))}</tbody></table>{allPages.length === 0 && <div className="p-8 text-center text-slate-400">Aucune page à attribuer. Créez du contenu d'abord.</div>}</div></div>)}
-        {view === 'viewer' && currentPage && (<div className="bg-white rounded-2xl shadow-sm border border-slate-200 min-h-[80vh] overflow-hidden">{currentPage.coverUrl ? <div className="h-64 w-full overflow-hidden relative"><img src={currentPage.coverUrl} alt="Cover" className="w-full h-full object-cover" /><div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div></div> : <div className="h-32 bg-slate-50 border-b border-slate-100"></div>}<div className="p-8 sm:p-12 max-w-5xl mx-auto -mt-10 relative z-10"><div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 mb-12"><h1 className="text-3xl sm:text-5xl font-extrabold text-slate-900 tracking-tight">{currentPage.title}</h1></div><div className="flex flex-wrap -mx-3 items-stretch">{currentPage.blocks.map(block => (<div key={block.id} className={`${getWidthClass(block.width)} px-3 mb-6`}><BlockRenderer block={block} /></div>))}</div></div></div>)}
+        
+        {/* VUE: VIEWER (Lecture) */}
+        {view === 'viewer' && currentPage && (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 min-h-[90vh] overflow-hidden relative">
+             <button onClick={() => setView('folders')} className="absolute top-6 left-6 z-30 p-2.5 bg-white/90 backdrop-blur-md border border-slate-200 rounded-full text-slate-600 hover:text-violet-600 hover:shadow-md transition-all shadow-sm group flex items-center gap-2" title="Retour">
+               <ArrowLeft size={20} />
+               <span className="text-sm font-medium hidden group-hover:inline-block transition-all pr-1">Retour</span>
+             </button>
+             {currentPage.coverUrl ? (
+               <div className="h-64 w-full overflow-hidden relative">
+                 <img src={currentPage.coverUrl} alt="Cover" className="w-full h-full object-cover" />
+                 <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
+               </div>
+             ) : null}
+             
+             {/* Largeur adaptative pour contenu */}
+             <div className={`px-8 sm:px-12 pb-12 max-w-[1400px] mx-auto relative z-10 ${currentPage.coverUrl ? '-mt-16' : 'pt-24'}`}>
+               {currentPage.coverUrl ? (
+                 <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 mb-12">
+                   <h1 className="text-3xl sm:text-5xl font-extrabold text-slate-900 tracking-tight">{currentPage.title}</h1>
+                 </div>
+               ) : (
+                 <div className="mb-12 border-b border-slate-100 pb-8 pl-12">
+                   <h1 className="text-4xl sm:text-6xl font-black text-slate-900 tracking-tight leading-tight">{currentPage.title}</h1>
+                 </div>
+               )}
+               <div className="flex flex-wrap -mx-3 items-stretch">
+                 {currentPage.blocks.map(block => (
+                   <div key={block.id} className={`${getWidthClass(block.width)} px-3 mb-6`}>
+                      <BlockRenderer block={block} />
+                   </div>
+                 ))}
+               </div>
+             </div>
+          </div>
+        )}
+        
+        {/* VUE: EDITOR */}
         {view === 'editor' && (<Editor title={editorTitle} setTitle={setEditorTitle} cover={editorCover} setCover={setEditorCover} blocks={editorBlocks} setBlocks={setEditorBlocks} onClose={() => setView('folders')} onSave={handleSavePage} storage={storage} />)}
       </main>
     </div>
   );
 }
 
+// ... (BlockRenderer inchangé) ...
 function BlockRenderer({ block }: { block: Block }) {
   const [flipped, setFlipped] = useState(false);
   const [open, setOpen] = useState(false);
@@ -355,13 +401,13 @@ function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, 
           <ToolSection title="Structure"><ToolButton icon={Type} label="Titre H2" onClick={() => addBlock('h2')}/><ToolButton icon={FileText} label="Texte" onClick={() => addBlock('text')}/><ToolButton icon={Sigma} label="Maths" onClick={() => addBlock('equation')}/></ToolSection>
           <ToolSection title="Interactif"><ToolButton icon={RotateCw} label="Flashcard" onClick={() => addBlock('flipcard')}/><ToolButton icon={List} label="Accordéon" onClick={() => addBlock('accordion')}/><ToolButton icon={Calendar} label="Timeline" onClick={() => addBlock('timeline')}/></ToolSection>
           <ToolSection title="Médias"><ToolButton icon={ImageIcon} label="Image" onClick={() => addBlock('image')}/><ToolButton icon={FileCode} label="Embed" onClick={() => addBlock('embed')}/><ToolButton icon={File} label="PDF" onClick={() => addBlock('pdf')}/><ToolButton icon={AlertCircle} label="Callout" onClick={() => addBlock('callout')}/></ToolSection>
-          <div className="pt-6 border-t"><label className="text-xs font-bold text-slate-400 uppercase">Cover</label><div className="flex gap-2 mt-2"><input className="w-full text-sm p-2 border rounded" value={cover} onChange={e=>setCover(e.target.value)} placeholder="URL..."/><label className="p-2 bg-slate-100 rounded cursor-pointer"><input type="file" hidden onChange={async e=>{if(e.target.files?.[0]){setUploading(true); const u = await onUpload(e.target.files[0]); if(u) setCover(u); setUploading(false);}}} disabled={uploading}/><UploadCloud size={20}/></label></div></div>
+          <div className="pt-6 border-t"><label className="text-xs font-bold text-slate-400 uppercase">Cover (1920x480px recommandé)</label><div className="flex gap-2 mt-2"><input className="w-full text-sm p-2 border rounded" value={cover} onChange={e=>setCover(e.target.value)} placeholder="URL..."/><label className="p-2 bg-slate-100 rounded cursor-pointer"><input type="file" hidden onChange={async e=>{if(e.target.files?.[0]){setUploading(true); const u = await onUpload(e.target.files[0]); if(u) setCover(u); setUploading(false);}}} disabled={uploading}/><UploadCloud size={20}/></label></div></div>
         </div>
       </aside>
       <div className="flex-1 flex flex-col h-full relative bg-slate-50/50">
         <div className="absolute top-6 right-8 flex gap-3 z-20"><button onClick={onClose} className="px-5 py-2.5 bg-white border rounded-xl shadow-sm">Annuler</button><button onClick={onSave} className="px-6 py-2.5 bg-violet-600 text-white rounded-xl shadow-lg flex gap-2"><Save size={18}/> Publier</button></div>
         <div className="flex-1 overflow-y-auto p-8 sm:p-12">
-          <div className="max-w-5xl mx-auto min-h-[90%] bg-white rounded-2xl shadow-sm p-12 border border-slate-200 relative">
+          <div className="max-w-[1600px] mx-auto min-h-[90%] bg-white rounded-2xl shadow-sm p-12 border border-slate-200 relative">
             <input className="w-full text-4xl font-black border-none focus:ring-0 bg-transparent mb-12" placeholder="Titre..." value={title} onChange={e=>setTitle(e.target.value)}/>
             <div className="flex flex-wrap -mx-3 items-start">
               {blocks.map((block: Block, index: number) => (
