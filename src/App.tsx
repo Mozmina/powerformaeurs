@@ -104,7 +104,7 @@ interface FolderData { id: string; title: string; parentId: string | null; creat
 const getWidthClass = (w?: BlockWidth) => w === '50%' ? 'w-full md:w-1/2' : w === '33%' ? 'w-full md:w-1/3' : 'w-full';
 const getShadowClass = (s?: BlockShadow) => s === 'sm' ? 'shadow-sm' : s === 'md' ? 'shadow-md' : s === 'xl' ? 'shadow-xl shadow-slate-200' : 'shadow-none';
 
-const getBgClass = (c?: string) => {
+constHZBgClass = (c?: string) => {
   switch(c) {
     case 'slate': return 'bg-slate-50 border-slate-200';
     case 'blue': return 'bg-blue-50 border-blue-200';
@@ -122,6 +122,23 @@ const getBgClass = (c?: string) => {
 const getFontClass = (f?: FontFamily) => f === 'serif' ? 'font-serif' : f === 'mono' ? 'font-mono' : 'font-sans';
 const getSizeClass = (s?: FontSize) => s === 'sm' ? 'text-sm' : s === 'lg' ? 'text-lg' : s === 'xl' ? 'text-xl' : s === '2xl' ? 'text-2xl' : 'text-base';
 const getAlignClass = (a?: TextAlign) => a === 'center' ? 'text-center' : a === 'right' ? 'text-right' : 'text-left';
+
+// --- HELPER FUNCTION POUR EMBED ---
+const getEmbedUrl = (url?: string) => {
+  if (!url) return '';
+  // Transform YouTube links
+  if (url.includes('youtube.com/watch?v=')) {
+    return url.replace('watch?v=', 'embed/').split('&')[0];
+  }
+  if (url.includes('youtu.be/')) {
+    return url.replace('youtu.be/', 'youtube.com/embed/');
+  }
+  // Transform Vimeo links (basic)
+  if (url.includes('vimeo.com/') && !url.includes('player.vimeo.com')) {
+    return url.replace('vimeo.com/', 'player.vimeo.com/video/');
+  }
+  return url;
+};
 
 const EditableText = ({ html, tagName, className, onChange, placeholder }: any) => {
   const contentEditableRef = useRef<HTMLElement>(null);
@@ -306,10 +323,12 @@ export default function App() {
   );
 }
 
-// ... (BlockRenderer inchangé) ...
 function BlockRenderer({ block }: { block: Block }) {
   const [flipped, setFlipped] = useState(false);
   const [open, setOpen] = useState(false);
+  // AJOUT: State pour le plein écran
+  const [isFullScreen, setIsFullScreen] = useState(false);
+
   const bgClass = getBgClass(block.style?.backgroundColor);
   const isHexBg = block.style?.backgroundColor && block.style.backgroundColor.startsWith('#');
   const bgStyle = isHexBg ? { backgroundColor: block.style?.backgroundColor } : {};
@@ -331,7 +350,56 @@ function BlockRenderer({ block }: { block: Block }) {
       case 'accordion': return <div className="border border-slate-200 rounded-xl overflow-hidden bg-white/60 shadow-sm hover:shadow-md transition-shadow text-left"><button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 transition-colors text-left font-semibold text-slate-800">{block.title}<ChevronDown className={`transform transition-transform duration-300 text-slate-400 ${open ? 'rotate-180' : ''}`} /></button><div className={`grid accordion-content ${open ? 'accordion-open' : 'accordion-closed'}`}><div className="accordion-inner p-4 border-t border-slate-100 text-slate-600 leading-relaxed bg-slate-50/50"><div dangerouslySetInnerHTML={{ __html: block.content || '' }} /></div></div></div>;
       case 'timeline': return <div className="space-y-6 relative py-2 text-left"><div className="absolute left-[7px] top-4 bottom-4 w-0.5 bg-slate-200"></div>{(block.items || []).map((item) => (<div key={item.id} className="relative pl-8 group"><div className="absolute left-0 top-1.5 w-4 h-4 bg-white border-2 border-slate-300 rounded-full group-hover:border-violet-500 group-hover:scale-125 transition-all shadow-sm z-10" /><div><span className="inline-block text-xs font-bold uppercase text-violet-600 bg-violet-50 px-2 py-0.5 rounded border border-violet-100 mb-1">{item.date}</span><h4 className="font-bold text-slate-800">{item.title}</h4><div className="text-slate-600 text-sm leading-relaxed mt-1">{item.description}</div></div></div>))}</div>;
       case 'image': return <div className="rounded-xl overflow-hidden shadow-sm border border-slate-100"><img src={block.url} alt="content" className="w-full h-auto" loading="lazy" /></div>;
-      case 'embed': return <div className="rounded-xl overflow-hidden shadow-sm border border-slate-100 bg-slate-100 relative aspect-video">{block.url ? <iframe src={block.url} className="absolute inset-0 w-full h-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen title="Embed" /> : <div className="flex items-center justify-center h-full text-slate-400">Embed vide</div>}</div>;
+      
+      // AJOUT: Modification du rendu EMBED pour utiliser getEmbedUrl et ajouter le bouton Plein écran
+      case 'embed': return (
+        <>
+          <div className="rounded-xl overflow-hidden shadow-sm border border-slate-100 bg-slate-100 relative aspect-video group/embed">
+            {block.url ? (
+              <>
+                <iframe 
+                  src={getEmbedUrl(block.url)} 
+                  className="absolute inset-0 w-full h-full" 
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                  allowFullScreen 
+                  title="Embed" 
+                />
+                {/* Bouton pour activer le plein écran */}
+                <button
+                  onClick={() => setIsFullScreen(true)}
+                  className="absolute top-2 right-2 bg-black/50 hover:bg-black/70 text-white p-2 rounded-lg opacity-0 group-hover/embed:opacity-100 transition-opacity z-10 shadow-sm backdrop-blur-sm"
+                  title="Agrandir"
+                >
+                  <Maximize size={16} />
+                </button>
+              </>
+            ) : (
+              <div className="flex items-center justify-center h-full text-slate-400">Embed vide</div>
+            )}
+          </div>
+          {/* Modal Plein écran */}
+          {isFullScreen && block.url && (
+            <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4 md:p-8 backdrop-blur-md">
+              <button 
+                onClick={() => setIsFullScreen(false)}
+                className="absolute top-4 right-4 text-white hover:text-red-400 p-2 bg-white/10 rounded-full transition-colors z-50"
+              >
+                <X size={24} />
+              </button>
+              <div className="w-full h-full max-w-7xl max-h-[85vh] bg-black rounded-xl overflow-hidden shadow-2xl relative">
+                <iframe 
+                  src={getEmbedUrl(block.url)} 
+                  className="w-full h-full" 
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                  allowFullScreen 
+                  title="Embed Fullscreen" 
+                />
+              </div>
+            </div>
+          )}
+        </>
+      );
+      
       case 'pdf': return <div className="rounded-xl overflow-hidden shadow-sm border border-slate-100 h-[500px] bg-slate-50">{block.url ? <object data={block.url} type="application/pdf" className="w-full h-full"><div className="flex flex-col items-center justify-center h-full text-slate-500 p-4 text-center"><p className="mb-2">Impossible d'afficher le PDF.</p><a href={block.url} target="_blank" rel="noopener noreferrer" className="text-violet-600 underline font-medium">Télécharger</a></div></object> : <div className="flex items-center justify-center h-full text-slate-400">Aucun PDF</div>}</div>;
       default: return null;
     }
@@ -456,7 +524,24 @@ function Editor({ title, setTitle, cover, setCover, blocks, setBlocks, onClose, 
                     {block.type==='callout' && <div className="flex gap-2"><AlertCircle className="shrink-0 text-slate-400"/><div className="flex-1"><select className="text-xs font-bold uppercase text-slate-400 mb-1" value={block.subType} onChange={e=>updateBlock(block.id, {subType:e.target.value as any})}><option value="info">Info</option><option value="warn">Warn</option><option value="idea">Idea</option></select><EditableText html={block.content||''} tagName="div" className="outline-none" onChange={(val:string)=>updateBlock(block.id, {content:val})} placeholder="Note..."/></div></div>}
                     {block.type==='timeline' && <div className="space-y-2">{(block.items||[]).map(i=><div key={i.id} className="flex gap-2 border p-2 rounded bg-white"><input className="w-20 font-bold text-violet-600 text-xs" value={i.date} onChange={e=>updateTimelineItem(block.id,i.id,'date',e.target.value)}/><div className="flex-1"><input className="w-full font-bold text-sm" value={i.title} onChange={e=>updateTimelineItem(block.id,i.id,'title',e.target.value)}/><textarea className="w-full text-xs resize-none" rows={1} value={i.description} onChange={e=>updateTimelineItem(block.id,i.id,'description',e.target.value)}/></div><button onClick={()=>removeTimelineItem(block.id,i.id)} className="text-slate-300 hover:text-red-500"><X size={14}/></button></div>)}<button onClick={()=>addTimelineItem(block.id)} className="text-xs text-violet-600 font-bold">+ Etape</button></div>}
                     {block.type==='image' && <div className="border-2 border-dashed p-4 text-center rounded-xl">{block.url ? <div className="relative"><img src={block.url} className="rounded w-full"/><button onClick={()=>updateBlock(block.id,{url:''})} className="absolute top-2 right-2 bg-white text-red-500 p-1 rounded shadow"><Trash2 size={14}/></button></div> : <label className="cursor-pointer text-slate-400 hover:text-violet-600"><UploadCloud size={24} className="mx-auto"/><span className="text-xs">Image</span><input type="file" hidden onChange={async e=>{if(e.target.files?.[0]){const u = await onUpload(e.target.files[0]); if(u) updateBlock(block.id,{url:u});}}} /></label>}</div>}
-                    {['embed','pdf','flipcard','accordion','equation'].includes(block.type) && <div className="text-center text-slate-400 text-xs italic py-4 border rounded bg-slate-50">Éditeur simplifié pour {block.type}</div>}
+                    
+                    {/* AJOUT: Champ d'édition spécifique pour EMBED */}
+                    {block.type === 'embed' && (
+                       <div className="space-y-2">
+                         <div className="text-xs font-bold text-slate-400 uppercase">URL de la vidéo / Embed</div>
+                         <div className="flex gap-2">
+                           <input
+                             className="flex-1 p-2 text-sm border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-violet-500 outline-none"
+                             placeholder="Collez l'URL ici (YouTube, Vimeo...)"
+                             value={block.url || ''}
+                             onChange={(e) => updateBlock(block.id, { url: e.target.value })}
+                           />
+                         </div>
+                         <div className="text-[10px] text-slate-400">Le lien sera automatiquement converti au format lecteur (embed) si possible.</div>
+                       </div>
+                    )}
+
+                    {['pdf','flipcard','accordion','equation'].includes(block.type) && <div className="text-center text-slate-400 text-xs italic py-4 border rounded bg-slate-50">Éditeur simplifié pour {block.type}</div>}
                   </div>
                 </div>
               ))}
